@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { ToastProvider } from "@/components/providers/ToastProvider";
 
 export const metadata: Metadata = {
-  title: "Free Indeed - Liberté en Christ",
-  description: "Application chrétienne de soutien contre les addictions",
+  title: "Free Indeed",
+  description: "Application",
 };
 
 export default function RootLayout({
@@ -12,9 +13,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr">
-      <body className="antialiased">
-        {children}
+    // 1. AJOUT DE suppressHydrationWarning ICI
+    <html lang="fr" suppressHydrationWarning={true}>
+      {/* 2. AJOUT DE suppressHydrationWarning ICI AUSSI */}
+      <body className="antialiased" suppressHydrationWarning={true}>
+        <ToastProvider>
+          {children}
+        </ToastProvider>
       </body>
     </html>
   );
