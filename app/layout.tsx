@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { ToastProvider } from "@/components/providers/ToastProvider";
+import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
   title: "Free Indeed",
@@ -13,13 +13,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // 1. AJOUT DE suppressHydrationWarning ICI
     <html lang="fr" suppressHydrationWarning={true}>
-      {/* 2. AJOUT DE suppressHydrationWarning ICI AUSSI */}
       <body className="antialiased" suppressHydrationWarning={true}>
-        <ToastProvider>
-          {children}
-        </ToastProvider>
+        {children}
+        {/* ✅ AJOUT DU TOASTER SONNER */}
+        <Toaster position="top-center" richColors />
       </body>
     </html>
   );

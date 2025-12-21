@@ -4,16 +4,17 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Mail, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Mail, ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+
 import { forgotPasswordAction } from '@/lib/actions/auth-actions';
 import { forgotPasswordSchema, type ForgotPasswordFormValues } from '@/lib/validations/auth';
 import Input from '@/components/ui/Input';
-import Button from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 
 export default function ForgotPasswordPage() {
   const [isSuccess, setIsSuccess] = useState(false);
-  // 🗑️ SUPPRESSION : La ligne const [serverError...] a été retirée car inutile ici.
-
+  
   const { 
     register, 
     handleSubmit, 
@@ -24,12 +25,18 @@ export default function ForgotPasswordPage() {
   });
 
   const onSubmit = async (data: ForgotPasswordFormValues) => {
-    // 🗑️ SUPPRESSION : setServerError(null) retiré
-    const result = await forgotPasswordAction(data);
-    
-    // On affiche toujours le succès pour des raisons de sécurité
-    // peu importe si le backend renvoie une erreur ou un succès.
-    if (result.success || result.error) {
+    try {
+      // Appel au serveur
+      await forgotPasswordAction(data);
+      
+      // ✅ CORRECTION : On affiche le succès peu importe le résultat technique
+      // pour éviter de révéler si l'email existe ou non (Sécurité)
+      setIsSuccess(true);
+      toast.success("Demande prise en compte");
+      
+    } catch (error) {
+      // Même en cas d'erreur crash, on affiche le succès pour ne pas bloquer l'UX
+      console.error(error);
       setIsSuccess(true);
     }
   };
@@ -41,9 +48,11 @@ export default function ForgotPasswordPage() {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold font-sans text-gray-900">Mot de passe oublié ?</h1>
-          <p className="text-gray-600 mt-2 text-sm">
-            Entrez votre email pour recevoir un lien de réinitialisation.
-          </p>
+          {!isSuccess && (
+            <p className="text-gray-600 mt-2 text-sm">
+              Entrez votre email pour recevoir un lien de réinitialisation.
+            </p>
+          )}
         </div>
 
         {isSuccess ? (
@@ -51,9 +60,12 @@ export default function ForgotPasswordPage() {
             <div className="w-16 h-16 bg-success/10 rounded-full flex items-center justify-center mx-auto text-success">
               <CheckCircle2 size={32} />
             </div>
+
             <div className="bg-green-50 text-green-800 p-4 rounded-xl text-sm leading-relaxed border border-green-100">
-              Si un compte existe à cette adresse, vous recevrez un email avec les instructions dans quelques instants.
+              <p className="font-semibold mb-1">Email envoyé !</p>
+              Si un compte existe à cette adresse, vous recevrez les instructions dans quelques instants.
             </div>
+            
             <Button onClick={() => window.location.href = '/login'} variant="secondary" className="w-full">
               Retour à la connexion
             </Button>
@@ -71,9 +83,13 @@ export default function ForgotPasswordPage() {
             <Button 
               type="submit" 
               className="w-full" 
-              isLoading={isSubmitting} 
+              disabled={isSubmitting}
             >
-              Envoyer le lien
+              {isSubmitting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                "Envoyer le lien"
+              )}
             </Button>
 
             <div className="text-center">

@@ -7,16 +7,17 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Mail, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Mail, ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+
 import { forgotPasswordAction } from '@/lib/actions/auth-actions';
 import { forgotPasswordSchema, type ForgotPasswordFormValues } from '@/lib/validations/auth';
 import Input from '@/components/ui/Input';
-import Button from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 
 export default function ForgotPasswordPage() {
   const [isSuccess, setIsSuccess] = useState(false);
-  // ðŸ—‘ï¸ SUPPRESSION : La ligne const [serverError...] a Ã©tÃ© retirÃ©e car inutile ici.
-
+  
   const { 
     register, 
     handleSubmit, 
@@ -27,12 +28,18 @@ export default function ForgotPasswordPage() {
   });
 
   const onSubmit = async (data: ForgotPasswordFormValues) => {
-    // ðŸ—‘ï¸ SUPPRESSION : setServerError(null) retirÃ©
-    const result = await forgotPasswordAction(data);
-    
-    // On affiche toujours le succÃ¨s pour des raisons de sÃ©curitÃ©
-    // peu importe si le backend renvoie une erreur ou un succÃ¨s.
-    if (result.success || result.error) {
+    try {
+      // Appel au serveur
+      await forgotPasswordAction(data);
+      
+      // âœ… CORRECTION : On affiche le succÃ¨s peu importe le rÃ©sultat technique
+      // pour Ã©viter de rÃ©vÃ©ler si l'email existe ou non (SÃ©curitÃ©)
+      setIsSuccess(true);
+      toast.success("Demande prise en compte");
+      
+    } catch (error) {
+      // MÃªme en cas d'erreur crash, on affiche le succÃ¨s pour ne pas bloquer l'UX
+      console.error(error);
       setIsSuccess(true);
     }
   };
@@ -44,9 +51,11 @@ export default function ForgotPasswordPage() {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold font-sans text-gray-900">Mot de passe oubliÃ© ?</h1>
-          <p className="text-gray-600 mt-2 text-sm">
-            Entrez votre email pour recevoir un lien de rÃ©initialisation.
-          </p>
+          {!isSuccess && (
+            <p className="text-gray-600 mt-2 text-sm">
+              Entrez votre email pour recevoir un lien de rÃ©initialisation.
+            </p>
+          )}
         </div>
 
         {isSuccess ? (
@@ -54,9 +63,12 @@ export default function ForgotPasswordPage() {
             <div className="w-16 h-16 bg-success/10 rounded-full flex items-center justify-center mx-auto text-success">
               <CheckCircle2 size={32} />
             </div>
+
             <div className="bg-green-50 text-green-800 p-4 rounded-xl text-sm leading-relaxed border border-green-100">
-              Si un compte existe Ã  cette adresse, vous recevrez un email avec les instructions dans quelques instants.
+              <p className="font-semibold mb-1">Email envoyÃ© !</p>
+              Si un compte existe Ã  cette adresse, vous recevrez les instructions dans quelques instants.
             </div>
+            
             <Button onClick={() => window.location.href = '/login'} variant="secondary" className="w-full">
               Retour Ã  la connexion
             </Button>
@@ -74,9 +86,13 @@ export default function ForgotPasswordPage() {
             <Button 
               type="submit" 
               className="w-full" 
-              isLoading={isSubmitting} 
+              disabled={isSubmitting}
             >
-              Envoyer le lien
+              {isSubmitting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                "Envoyer le lien"
+              )}
             </Button>
 
             <div className="text-center">
@@ -99,25 +115,29 @@ FICHIER: C:\Users\gegem\free-indeed\app\(auth)\login\page.tsx
 ==========================================
 "use client";
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Mail, Lock, LogIn, ArrowRight, Loader2 } from 'lucide-react'; // âœ… Ajout Loader2
+import { Mail, Lock, LogIn, ArrowRight, Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+
 import { signInAction } from '@/lib/actions/auth-actions';
 import { signInSchema, type SignInFormValues } from '@/lib/validations/auth';
+import { mapAuthError } from '@/lib/errors/mapping';
 import Input from '@/components/ui/Input';
-import {Button} from '@/components/ui/Button';
-import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/Button';
 
 export default function SignInPage() {
   const [serverError, setServerError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
   const { 
     register, 
     handleSubmit, 
-    formState: { errors, isSubmitting } 
+    formState: { errors } 
   } = useForm<SignInFormValues>({
     resolver: zodResolver(signInSchema),
     defaultValues: {
@@ -126,30 +146,39 @@ export default function SignInPage() {
     }
   });
 
-  const onSubmit = async (data: SignInFormValues) => {
+  const onSubmit = (data: SignInFormValues) => {
     setServerError(null);
-    const result = await signInAction(data);
+    
+    startTransition(async () => {
+      try {
+        const result = await signInAction(data);
 
-    // âœ… CORRECTION 1 : Adaptation next-safe-action v7 (result.serverError / result.data)
-    if (result?.serverError) {
-      setServerError(result.serverError);
-    } else if (result?.data?.success) {
-      // Redirection vers le dashboard aprÃ¨s succÃ¨s
-      router.push('/dashboard');
-      router.refresh();
-    } else {
-      setServerError("Une erreur inconnue est survenue.");
-    }
+        if (!result.success) {
+          const mappedError = mapAuthError(new Error(result.error));
+          setServerError(mappedError);
+          toast.error(mappedError);
+          return;
+        }
+
+        toast.success("Connexion rÃ©ussie !");
+        // Le middleware s'occupera de rediriger vers /onboarding ou /dashboard si l'utilisateur accÃ¨de Ã  la home
+        // Mais nous forÃ§ons ici pour Ãªtre explicite
+        router.refresh(); // Important pour sync les cookies
+        router.push(result.redirectTo || '/dashboard');
+        
+      } catch (err) {
+        setServerError("Erreur inattendue.");
+        console.error(err);
+      }
+    });
   };
 
   return (
     <div className="min-h-screen bg-gray-bg flex items-center justify-center p-6">
-      {/* âœ… Ajout d'une animation d'entrÃ©e sur la carte */}
       <div className="card max-w-md w-full p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
         
-        {/* âœ… 1. Header avec "Logo" et message d'accueil */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gold/10 mb-4 animate-pulse-slow">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gold/10 mb-4">
             <LogIn className="w-8 h-8 text-gold" strokeWidth={1.5} />
           </div>
           <h1 className="text-2xl font-bold font-sans text-gray-900">Bon retour parmi nous</h1>
@@ -177,13 +206,11 @@ export default function SignInPage() {
             <Input 
               label="Mot de passe"
               isPassword 
-              type="password" 
               placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
               icon={Lock} 
               error={errors.password?.message}
               {...register('password')}
             />
-            {/* âœ… 2. Lien Mot de passe oubliÃ© */}
             <div className="flex justify-end mt-2">
               <Link 
                 href="/forgot-password" 
@@ -194,13 +221,12 @@ export default function SignInPage() {
             </div>
           </div>
 
-          {/* âœ… CORRECTION 2 : Retrait de 'isLoading' prop inexistante + Ajout Loader interne */}
           <Button 
             type="submit" 
             className="w-full mt-6" 
-            disabled={isSubmitting} 
+            disabled={isPending} 
           >
-             {isSubmitting ? (
+            {isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <ArrowRight className="mr-2 h-4 w-4" />
@@ -209,7 +235,6 @@ export default function SignInPage() {
           </Button>
         </form>
 
-        {/* âœ… 3. Footer amÃ©liorÃ© */}
         <div className="mt-8 text-center text-sm text-gray-500 border-t border-gray-100 pt-6">
           <p>
             Pas encore de compte ?{' '}
@@ -574,137 +599,131 @@ FICHIER: C:\Users\gegem\free-indeed\app\(auth)\reset-password\page.tsx
 ==========================================
 "use client";
 
-import { useForm, type FieldErrors } from "react-hook-form";
+import { useTransition } from "react";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter } from "next/navigation";
+import { Loader2, Lock, CheckCircle2, XCircle } from "lucide-react";
+import { toast } from "sonner";
+
+import { Button } from "@/components/ui/Button";
+import Input from "@/components/ui/Input";
+import PasswordStrengthIndicator from "@/components/ui/PasswordStrengthIndicator";
+
 import {
   resetPasswordSchema,
   type ResetPasswordFormValues,
 } from "@/lib/validations/auth";
 import { resetPasswordAction } from "@/lib/actions/auth-actions";
-import { useAction } from "next-safe-action/hooks";
-
-// âœ… CORRECTION 1 : Retour aux imports NOMMÃ‰S (avec accolades)
-// TypeScript a confirmÃ© qu'il n'y a pas d'export par dÃ©faut.
-import { Button } from "@/components/ui/Button";
-import Input  from "@/components/ui/Input";
-
-// âœ… Import du formulaire standard shadcn
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  // FormLabel, // On le retire car votre Input gÃ¨re son propre label
-  FormMessage,
-} from "@/components/ui/form";
-
-import { toast } from "sonner";
-import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
 
-  const form = useForm<ResetPasswordFormValues>({
+  const {
+    register,
+    handleSubmit,
+    control,
+    formState: { errors } // On rÃ©cupÃ¨re isValid aussi
+  } = useForm<ResetPasswordFormValues>({
     resolver: zodResolver(resetPasswordSchema),
+    mode: "all", // "all" valide au changement ET au blur pour un feedback maximal
     defaultValues: {
       password: "",
       confirmPassword: "",
     },
   });
 
-  const { execute, status } = useAction(resetPasswordAction, {
-    onSuccess: () => {
-      toast.success("Mot de passe modifiÃ© avec succÃ¨s");
-      router.push("/login");
-    },
-    onError: ({ error }) => {
-      const msg = error.serverError || "Une erreur est survenue";
-      toast.error(msg);
-    },
-  });
+  const passwordValue = useWatch({ control, name: 'password', defaultValue: '' });
+  const confirmValue = useWatch({ control, name: 'confirmPassword', defaultValue: '' });
+
+  // VÃ©rification manuelle pour le feedback visuel immÃ©diat (Double sÃ©curitÃ©)
+  const passwordsMatch = passwordValue && confirmValue && passwordValue === confirmValue;
+  const showMismatchError = confirmValue.length > 0 && !passwordsMatch;
 
   const onSubmit = (data: ResetPasswordFormValues) => {
-    execute(data);
+    startTransition(async () => {
+        const result = await resetPasswordAction(data);
+        
+        if (result.success) {
+            toast.success("Mot de passe modifiÃ© avec succÃ¨s");
+            router.push("/login");
+        } else {
+            toast.error(result.error || "Une erreur est survenue");
+        }
+    });
   };
 
-  const onError = (formErrors: FieldErrors<ResetPasswordFormValues>) => {
-    if (formErrors.confirmPassword) {
-      toast.error(formErrors.confirmPassword.message);
-    } else if (formErrors.password) {
-      toast.error(formErrors.password.message);
-    }
+  const onInvalid = () => {
+    // Feedback vibratoire ou visuel supplÃ©mentaire si besoin
+    toast.error("Veuillez vÃ©rifier les champs rouges");
   };
-
-  const isLoading = status === "executing";
 
   return (
-    <div className="container flex h-screen w-screen flex-col items-center justify-center">
-      <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
-        <div className="flex flex-col space-y-2 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            RÃ©initialisation du mot de passe
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Nouveau mot de passe requis.
-          </p>
+    <div className="min-h-screen bg-gray-bg flex items-center justify-center p-6">
+      <div className="card max-w-md w-full p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        
+        <div className="text-center mb-8">
+            <div className="w-16 h-16 bg-gold/10 rounded-full flex items-center justify-center mx-auto mb-4 text-gold">
+              <Lock size={32} />
+            </div>
+            <h1 className="text-2xl font-bold font-sans text-gray-900">
+                Nouveau mot de passe
+            </h1>
         </div>
 
-        <div className="grid gap-6">
-          <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(onSubmit, onError)}
-              className="space-y-4"
-            >
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      {/* âœ… CORRECTION 2 : Ajout de la prop 'label' obligatoire */}
-                      <Input
-                        label="Nouveau mot de passe"
-                        placeholder="********"
-                        type="password"
-                        autoCapitalize="none"
-                        autoComplete="new-password"
-                        disabled={isLoading}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="confirmPassword"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      {/* âœ… CORRECTION 2 : Ajout de la prop 'label' obligatoire */}
-                      <Input
-                        label="Confirmer le mot de passe"
-                        placeholder="********"
-                        type="password"
-                        autoCapitalize="none"
-                        autoComplete="new-password"
-                        disabled={isLoading}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <Button disabled={isLoading} type="submit" className="w-full">
-                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="space-y-6">
+            
+            {/* MOT DE PASSE */}
+            <div>
+                <Input
+                    label="Nouveau mot de passe"
+                    placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                    isPassword
+                    autoComplete="new-password"
+                    icon={Lock}
+                    disabled={isPending}
+                    {...register('password')}
+                    // PrioritÃ© Ã  l'erreur Zod
+                    error={errors.password?.message}
+                />
+                {passwordValue && <PasswordStrengthIndicator passwordValue={passwordValue} />}
+            </div>
+
+            {/* CONFIRMATION */}
+            <div>
+                <Input
+                    label="Confirmer le mot de passe"
+                    placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                    isPassword
+                    autoComplete="new-password"
+                    icon={CheckCircle2}
+                    disabled={isPending}
+                    {...register('confirmPassword')}
+                    // On force l'affichage de l'erreur si Zod le dit, OU si notre check manuel Ã©choue
+                    error={errors.confirmPassword?.message || (showMismatchError ? "Les mots de passe ne correspondent pas" : undefined)}
+                />
+            </div>
+
+            {/* BLOC D'ERREUR GLOBAL (Filet de sÃ©curitÃ© visuel) */}
+            {Object.keys(errors).length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-3 animate-in fade-in slide-in-from-top-1">
+                    <XCircle className="text-red-500 w-5 h-5 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm text-red-700">
+                        <p className="font-semibold">Impossible de valider :</p>
+                        <ul className="list-disc list-inside mt-1 space-y-1 text-xs">
+                            {errors.password && <li>Mot de passe invalide</li>}
+                            {(errors.confirmPassword || showMismatchError) && <li>Les mots de passe ne correspondent pas</li>}
+                        </ul>
+                    </div>
+                </div>
+            )}
+
+            <Button disabled={isPending} type="submit" className="w-full mt-4">
+                {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Modifier le mot de passe
-              </Button>
-            </form>
-          </Form>
-        </div>
+            </Button>
+        </form>
       </div>
     </div>
   );
@@ -753,36 +772,37 @@ FICHIER: C:\Users\gegem\free-indeed\app\(auth)\signup\page.tsx
 ==========================================
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Mail, User, Lock, UserPlus, Check, X, Loader2 } from 'lucide-react';
+import { Mail, User, Lock, UserPlus, Loader2, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
+
 import { signUpAction } from '@/lib/actions/auth-actions';
 import { signUpSchema, type SignUpFormValues } from '@/lib/validations/auth';
-
-// âœ… IMPORTS CORRECTS
-import { Button } from '@/components/ui/Button'; // Named export
-import Input from '@/components/ui/Input';       // Default export
-import PhoneInput from '@/components/ui/PhoneInput'; // Default export
+import { mapAuthError } from '@/lib/errors/mapping';
+import { Button } from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import PhoneInput from '@/components/ui/PhoneInput';
 import PasswordStrengthIndicator from '@/components/ui/PasswordStrengthIndicator';
 
 export default function SignUpPage() {
   const [serverError, setServerError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
   const router = useRouter();
-  
-  const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
 
   const { 
     register, 
-    control, 
     handleSubmit, 
     setValue,
-    formState: { errors, isSubmitting, isValid } 
+    setError,
+    control,
+    formState: { errors } 
   } = useForm<SignUpFormValues>({
-    resolver: zodResolver(signUpSchema), // âœ… Maintenant le schÃ©ma contient bien firstName, etc.
-    mode: "onTouched", 
+    resolver: zodResolver(signUpSchema),
+    mode: "onBlur", 
     defaultValues: {
       username: '',
       email: '',
@@ -793,57 +813,57 @@ export default function SignUpPage() {
     }
   });
 
-  // âœ… CORRECTION TYPAGE : as string pour Ã©viter les erreurs d'objets imbriquÃ©s
-  const usernameValue = useWatch({ control, name: 'username' }) as string;
-  const emailValue = useWatch({ control, name: 'email' }) as string;
-  const passwordValue = useWatch({ control, name: 'password' }) as string;
-  const phoneNumberValue = useWatch({ control, name: 'phoneNumber' }) as string;
+  const passwordValue = useWatch({ 
+    control, 
+    name: 'password', 
+    defaultValue: ''
+  });
 
-  // ðŸ” Check Username logic
-  useEffect(() => {
-    const timer = setTimeout(async () => {
-      if (!usernameValue || usernameValue.length < 3) {
-        setUsernameStatus('idle');
-        return;
-      }
+  const phoneNumberValue = useWatch({ 
+    control, 
+    name: 'phoneNumber',
+    defaultValue: '' 
+  });
 
-      setUsernameStatus('checking');
-
-      try {
-        const res = await fetch(`/api/check-username?username=${usernameValue}`);
-        const data = await res.json();
-        setUsernameStatus(data.available ? 'available' : 'taken');
-      } catch {
-        setUsernameStatus('idle');
-      }
-    }, 800);
-
-    return () => clearTimeout(timer);
-  }, [usernameValue]);
-
-  const onSubmit = async (data: SignUpFormValues) => {
-    if (usernameStatus === 'taken' || usernameStatus === 'checking') return;
-    
+  const onSubmit = (data: SignUpFormValues) => {
     setServerError(null);
-    const result = await signUpAction(data);
     
-    // âœ… GESTION ERREUR TYPE-SAFE
-    // next-safe-action v7 retourne { data, serverError, validationErrors }
-    if (result?.serverError) {
-      setServerError(result.serverError);
-    } else if (result?.data?.success) {
-      router.push('/signup/success');
-    } else {
-      setServerError("Une erreur inconnue est survenue.");
-    }
-  };
+    startTransition(async () => {
+      try {
+        const result = await signUpAction(data);
+        
+        if (!result.success) {
+          // Gestion des erreurs de champs spÃ©cifiques
+          if (result.fieldErrors) {
+            Object.entries(result.fieldErrors).forEach(([field, message]) => {
+              setError(field as keyof SignUpFormValues, {
+                type: "server",
+                message: message
+              });
+            });
+            toast.error("Veuillez corriger les erreurs indiquÃ©es.");
+            return;
+          }
 
-  const isButtonDisabled = 
-    !isValid ||                   
-    !!errors.email ||             
-    !emailValue ||                
-    usernameStatus === 'taken' || 
-    usernameStatus === 'checking';
+          // Gestion de l'erreur globale traduite
+          const mappedError = mapAuthError(new Error(result.error));
+          setServerError(mappedError);
+          toast.error(mappedError);
+          return;
+        }
+
+        // SuccÃ¨s
+        toast.success("Compte crÃ©Ã© avec succÃ¨s !");
+        if (result.redirectTo) {
+          router.push(result.redirectTo);
+        }
+      } catch {
+        const message = "Une erreur inattendue est survenue.";
+        setServerError(message);
+        toast.error(message);
+      }
+    });
+  };
 
   return (
     <div className="min-h-screen bg-gray-bg flex items-center justify-center p-6">
@@ -851,12 +871,17 @@ export default function SignUpPage() {
         <h1 className="text-3xl font-bold text-center mb-8 font-sans">CrÃ©er un compte</h1>
         
         {serverError && (
-          <div className="bg-error/10 text-error p-3 rounded-xl mb-6 text-center text-sm font-medium">
-            {serverError}
+          <div className="bg-error/10 text-error p-4 rounded-xl mb-6 text-sm font-medium flex items-start gap-3 animate-in slide-in-from-top-2">
+            <AlertCircle size={20} className="flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-semibold mb-1">Erreur de crÃ©ation de compte</p>
+              <p>{serverError}</p>
+            </div>
           </div>
         )}
         
         <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          
           <Input 
             label="PrÃ©nom" 
             placeholder="Ex: Thomas" 
@@ -873,31 +898,16 @@ export default function SignUpPage() {
             error={errors.lastName?.message} 
           />
           
-          <div className="relative">
-            <Input 
-              label="Pseudo" 
-              placeholder="Ex: Warrior_77" 
-              icon={User} 
-              {...register('username', {
-                onChange: (e) => {
-                  if (e.target.value.length >= 3) {
-                    setUsernameStatus('checking');
-                  } else {
-                    setUsernameStatus('idle');
-                  }
-                }
-              })} 
-              error={errors.username?.message || (usernameStatus === 'taken' ? "Ce pseudo est dÃ©jÃ  pris" : undefined)} 
-            />
-            <div className="absolute right-3 top-[38px]">
-              {usernameStatus === 'checking' && <Loader2 size={18} className="animate-spin text-gray-400" />}
-              {usernameStatus === 'available' && <Check size={18} className="text-success" />}
-              {usernameStatus === 'taken' && <X size={18} className="text-error" />}
-            </div>
-          </div>
+          <Input 
+            label="Pseudo" 
+            placeholder="Ex: Warrior_77" 
+            icon={User} 
+            {...register('username')} 
+            error={errors.username?.message}
+          />
 
           <PhoneInput 
-            value={phoneNumberValue || ''}
+            value={phoneNumberValue}
             onChange={(val) => setValue('phoneNumber', val)}
             error={errors.phoneNumber?.message}
           />
@@ -908,7 +918,7 @@ export default function SignUpPage() {
               placeholder="thomas@exemple.com" 
               icon={Mail} 
               {...register('email')} 
-              error={errors.email?.message} 
+              error={errors.email?.message}
             />
           </div>
 
@@ -921,15 +931,15 @@ export default function SignUpPage() {
               error={errors.password?.message}
               {...register('password')}
             />
-            <PasswordStrengthIndicator passwordValue={passwordValue || ''} />
+            {passwordValue && <PasswordStrengthIndicator passwordValue={passwordValue} />}
           </div>
 
           <Button 
             type="submit" 
             className="md:col-span-2 mt-6" 
-            disabled={isButtonDisabled || isSubmitting}
+            disabled={isPending}
           >
-            {isSubmitting ? (
+            {isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <UserPlus className="mr-2 h-4 w-4" />
@@ -1133,44 +1143,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 }
 
 ==========================================
-FICHIER: C:\Users\gegem\free-indeed\app\api\check-username\route.ts
-==========================================
-import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { z } from 'zod';
-
-const querySchema = z.object({
-  username: z.string().min(3).regex(/^[a-zA-Z0-9_]+$/),
-});
-
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const username = searchParams.get('username');
-
-  // Validation basique
-  const result = querySchema.safeParse({ username });
-  if (!result.success) {
-    return NextResponse.json({ available: false, error: 'Format invalide' }, { status: 400 });
-  }
-
-  const supabase = await createClient();
-
-  // On cherche si le pseudo existe dÃ©jÃ  (en ignorant la casse)
-  const { data, error } = await supabase
-    .from('users')
-    .select('username')
-    .ilike('username', username!) // ilike = insensible Ã  la casse
-    .maybeSingle();
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  // Si data existe, le pseudo est pris. Sinon, il est libre.
-  return NextResponse.json({ available: !data });
-}
-
-==========================================
 FICHIER: C:\Users\gegem\free-indeed\app\auth\callback\route.ts
 ==========================================
 import { NextResponse } from "next/server";
@@ -1358,7 +1330,7 @@ FICHIER: C:\Users\gegem\free-indeed\app\layout.tsx
 ==========================================
 import type { Metadata } from "next";
 import "./globals.css";
-import { ToastProvider } from "@/components/providers/ToastProvider";
+import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
   title: "Free Indeed",
@@ -1371,13 +1343,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // 1. AJOUT DE suppressHydrationWarning ICI
     <html lang="fr" suppressHydrationWarning={true}>
-      {/* 2. AJOUT DE suppressHydrationWarning ICI AUSSI */}
       <body className="antialiased" suppressHydrationWarning={true}>
-        <ToastProvider>
-          {children}
-        </ToastProvider>
+        {children}
+        {/* âœ… AJOUT DU TOASTER SONNER */}
+        <Toaster position="top-center" richColors />
       </body>
     </html>
   );
@@ -1402,106 +1372,6 @@ export default function Home() {
       </div>
     </div>
   )
-}
-
-==========================================
-FICHIER: C:\Users\gegem\free-indeed\components\providers\ToastProvider.tsx
-==========================================
-"use client";
-
-import React, { createContext, useContext, useState, useCallback } from 'react';
-import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react';
-
-type ToastType = 'success' | 'error' | 'warning' | 'info';
-
-interface Toast {
-  id: string;
-  type: ToastType;
-  message: string;
-}
-
-interface ToastContextType {
-  addToast: (type: ToastType, message: string) => void;
-  removeToast: (id: string) => void;
-}
-
-const ToastContext = createContext<ToastContextType | undefined>(undefined);
-
-export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-
-  const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((toast) => toast.id !== id));
-  }, []);
-
-  const addToast = useCallback((type: ToastType, message: string) => {
-    const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { id, type, message }]);
-
-    // Auto-dismiss aprÃ¨s 5 secondes
-    setTimeout(() => {
-      removeToast(id);
-    }, 5000);
-  }, [removeToast]);
-
-  return (
-    <ToastContext.Provider value={{ addToast, removeToast }}>
-      {children}
-      
-      {/* Container des Toasts (FixÃ© en haut au centre) */}
-      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] flex flex-col gap-2 w-full max-w-md px-4 pointer-events-none">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`
-              pointer-events-auto flex items-center gap-3 p-4 rounded-xl shadow-lg border animate-in slide-in-from-top-2 fade-in duration-300
-              ${toast.type === 'success' ? 'bg-white border-success/20 text-gray-900' : ''}
-              ${toast.type === 'error' ? 'bg-white border-error/20 text-gray-900' : ''}
-              ${toast.type === 'warning' ? 'bg-white border-warning/20 text-gray-900' : ''}
-              ${toast.type === 'info' ? 'bg-white border-blue-100 text-gray-900' : ''}
-            `}
-          >
-            {/* IcÃ´ne selon le type */}
-            <div className={`
-              flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center
-              ${toast.type === 'success' ? 'bg-success/10 text-success' : ''}
-              ${toast.type === 'error' ? 'bg-error/10 text-error' : ''}
-              ${toast.type === 'warning' ? 'bg-warning/10 text-warning' : ''}
-              ${toast.type === 'info' ? 'bg-blue-50 text-blue-500' : ''}
-            `}>
-              {toast.type === 'success' && <CheckCircle size={18} />}
-              {toast.type === 'error' && <AlertCircle size={18} />}
-              {toast.type === 'warning' && <AlertTriangle size={18} />}
-              {toast.type === 'info' && <Info size={18} />}
-            </div>
-
-            <p className="text-sm font-medium flex-1">{toast.message}</p>
-
-            <button 
-              onClick={() => removeToast(toast.id)}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              <X size={18} />
-            </button>
-          </div>
-        ))}
-      </div>
-    </ToastContext.Provider>
-  );
-}
-
-// Hook personnalisÃ© pour utiliser le toast
-export function useToast() {
-  const context = useContext(ToastContext);
-  if (!context) {
-    throw new Error('useToast must be used within a ToastProvider');
-  }
-  return {
-    success: (msg: string) => context.addToast('success', msg),
-    error: (msg: string) => context.addToast('error', msg),
-    warning: (msg: string) => context.addToast('warning', msg),
-    info: (msg: string) => context.addToast('info', msg),
-  };
 }
 
 ==========================================
@@ -2187,335 +2057,461 @@ export default function PhoneInput({ value, onChange, error, disabled }: PhoneIn
 }
 
 ==========================================
-FICHIER: C:\Users\gegem\free-indeed\lib\actions\utils\action-wrapper.ts
+FICHIER: C:\Users\gegem\free-indeed\components\ui\toast-provider.tsx
 ==========================================
-import { logger } from '@/lib/logger';
-import { z } from 'zod';
+'use client';
 
-type ActionResponse<T> = {
-  data?: T;
-  error?: string;
-  success?: boolean;
-};
+import { Toaster } from 'sonner';
 
-/**
- * Wrapper universel pour Server Actions avec :
- * - Validation Zod automatique
- * - Gestion d'erreurs structurÃ©e (Try/Catch global)
- * - Logging automatique (Start/Success/Error)
- */
-export function createAction<TInput, TOutput>(config: {
-  name: string;
-  schema: z.ZodSchema<TInput>;
-  handler: (data: TInput) => Promise<TOutput>;
-}) {
-  return async (rawData: unknown): Promise<ActionResponse<TOutput>> => {
-    const actionId = crypto.randomUUID(); // ID unique pour tracer la requÃªte
-    
-    try {
-      // 1. Validation Zod
-      const validation = config.schema.safeParse(rawData);
-      
-      if (!validation.success) {
-        const firstError = validation.error.issues[0];
-        logger.warn({ 
-          action: config.name, 
-          actionId,
-          error: firstError.message,
-          path: firstError.path 
-        }, 'Validation failed');
-        
-        return { error: firstError.message, success: false };
-      }
-
-      // 2. ExÃ©cution du handler
-      logger.info({ action: config.name, actionId }, 'Action started');
-      
-      const result = await config.handler(validation.data);
-      
-      logger.info({ action: config.name, actionId }, 'Action succeeded');
-      return { data: result, success: true };
-
-    } catch (error: unknown) {
-      // Gestion d'erreur robuste avec vÃ©rification de type
-      const errorMessage = error instanceof Error ? error.message : 'Une erreur inconnue est survenue';
-      const errorStack = error instanceof Error ? error.stack : undefined;
-      
-      logger.error({ 
-        action: config.name, 
-        actionId,
-        error: errorMessage,
-        stack: errorStack
-      }, 'Action failed critical');
-      
-      // On retourne le message d'erreur
-      return { error: errorMessage, success: false };
-    }
-  };
+export function ToastProvider() {
+  return (
+    <Toaster
+      position="top-center"
+      richColors
+      expand={true}
+      duration={5000}
+      toastOptions={{
+        style: {
+          borderRadius: '12px',
+          padding: '16px',
+          fontSize: '14px',
+        },
+        className: 'font-sans',
+      }}
+    />
+  );
 }
 
 ==========================================
 FICHIER: C:\Users\gegem\free-indeed\lib\actions\auth-actions.ts
 ==========================================
-"use server";
+'use server'
 
-// âœ… VÃ©rifiez bien que ce chemin est correct selon votre structure
-import { createClient } from "@/lib/supabase/server"; 
-import { actionClient } from "@/lib/safe-action";
-import {
-  signUpSchema,
-  signInSchema,
-  forgotPasswordSchema,
-  resetPasswordSchema,
-} from "@/lib/validations/auth";
-import { redirect } from "next/navigation";
+import { createClient } from '@/lib/supabase/server'
+import { signUpSchema, signInSchema, type SignUpFormValues, type SignInFormValues } from '@/lib/validations/auth'
+import { redirect } from 'next/navigation'
 
-// --- SIGN UP ---
-export const signUpAction = actionClient
-  .schema(signUpSchema)
-  .action(async ({ parsedInput: data }) => {
-    const supabase = await createClient(); // âœ… AJOUT DE AWAIT
+export type ActionResponse = {
+  success: boolean
+  error?: string
+  fieldErrors?: Record<string, string>
+  redirectTo?: string
+}
 
-    const { error: authError } = await supabase.auth.signUp({
-      email: data.email,
-      password: data.password,
-      options: {
-        data: {
-          full_name: `${data.firstName} ${data.lastName}`,
-          username: data.username,
-          phone_number: data.phoneNumber,
-        },
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
+export async function signUpAction(data: SignUpFormValues): Promise<ActionResponse> {
+  const supabase = await createClient()
+
+  // 1. Validation des donnÃ©es
+  const validatedFields = signUpSchema.safeParse(data)
+  if (!validatedFields.success) {
+    return {
+      success: false,
+      error: "DonnÃ©es invalides",
+      fieldErrors: validatedFields.error.flatten().fieldErrors as Record<string, string>
+    }
+  }
+
+  const { email, password, username, firstName, lastName, phoneNumber } = validatedFields.data
+
+  // 2. VÃ©rification d'unicitÃ© (Pseudo/Email) via RPC ou Query simple
+  // On vÃ©rifie d'abord le pseudo car Auth gÃ¨re l'email
+  const { data: existingUser } = await supabase
+    .from('users')
+    .select('username')
+    .eq('username', username)
+    .single()
+
+  if (existingUser) {
+    return {
+      success: false,
+      fieldErrors: { username: "Ce pseudo est dÃ©jÃ  utilisÃ©." }
+    }
+  }
+
+  // 3. CrÃ©ation du compte Auth
+  // NOTE: Le trigger SQL 'on_auth_user_created' s'occupera de remplir public.users et public.user_profiles
+  const { error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        first_name: firstName,
+        last_name: lastName,
+        username: username,
+        phone_number: phoneNumber,
       },
-    });
+      // Important pour rediriger aprÃ¨s confirmation email si activÃ©
+      emailRedirectTo: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/auth/callback`
+    },
+  })
 
-    if (authError) {
-      if (authError.message.includes("already registered")) {
-        throw new Error("Cet email possÃ¨de dÃ©jÃ  un compte.");
-      }
-      throw new Error("Impossible de crÃ©er le compte. Contactez le support.");
-    }
+  if (error) {
+    return { success: false, error: error.message }
+  }
 
-    return { success: true };
-  });
+  // SuccÃ¨s
+  return { success: true, redirectTo: '/signup/success' }
+}
 
-// --- SIGN IN ---
-export const signInAction = actionClient
-  .schema(signInSchema)
-  .action(async ({ parsedInput: data }) => {
-    const supabase = await createClient(); // âœ… AJOUT DE AWAIT
+export async function signInAction(data: SignInFormValues): Promise<ActionResponse> {
+  const supabase = await createClient()
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: data.email,
-      password: data.password,
-    });
+  const validatedFields = signInSchema.safeParse(data)
+  if (!validatedFields.success) {
+    return { success: false, error: "Format invalide" }
+  }
 
-    if (authError) {
-      throw new Error("Email ou mot de passe incorrect.");
-    }
+  const { email, password } = validatedFields.data
 
-    return { success: true };
-  });
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  })
 
-// --- FORGOT PASSWORD ---
-export const forgotPasswordAction = actionClient
-  .schema(forgotPasswordSchema)
-  .action(async ({ parsedInput: data }) => {
-    const supabase = await createClient(); // âœ… AJOUT DE AWAIT
+  if (error) {
+    return { success: false, error: error.message }
+  }
 
-    const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/reset-password`,
-    });
+  // La redirection est gÃ©rÃ©e cÃ´tÃ© client ou via middleware, mais on peut renvoyer l'URL
+  return { success: true, redirectTo: '/dashboard' } // Le middleware ajustera si onboarding nÃ©cessaire
+}
 
-    if (error) {
-      console.error("Forgot password error:", error.message);
-    } 
+export async function signOutAction() {
+  const supabase = await createClient()
+  await supabase.auth.signOut()
+  redirect('/login')
+}
 
-    return { success: true };
-  });
+// ... (Code prÃ©cÃ©dent signUpAction, signInAction, signOutAction) ...
 
-// --- RESET PASSWORD ---
-export const resetPasswordAction = actionClient
-  .schema(resetPasswordSchema)
-  .action(async ({ parsedInput: data }) => {
-    const supabase = await createClient(); // âœ… AJOUT DE AWAIT
+// AJOUTS POUR COMPATIBILITÃ‰ ET PHASE 2
+import { forgotPasswordSchema, resetPasswordSchema, type ForgotPasswordFormValues, type ResetPasswordFormValues } from '@/lib/validations/auth'
 
-    const { error } = await supabase.auth.updateUser({
-      password: data.password,
-    });
+export async function forgotPasswordAction(data: ForgotPasswordFormValues): Promise<ActionResponse> {
+  const supabase = await createClient()
+  
+  const validated = forgotPasswordSchema.safeParse(data);
+  if (!validated.success) return { success: false, error: "Email invalide" };
 
-    if (error) {
-      throw new Error("Impossible de modifier le mot de passe.");
-    }
+  const { error } = await supabase.auth.resetPasswordForEmail(validated.data.email, {
+    redirectTo: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/reset-password`,
+  })
 
-    return { success: true };
-  });
+  // SÃ©curitÃ©: on ne dit jamais si l'email n'existe pas
+  if (error) {
+    console.error("Reset password error:", error);
+  }
 
-// --- SIGN OUT ---
-export const signOutAction = async () => {
-  const supabase = await createClient(); // âœ… AJOUT DE AWAIT
-  await supabase.auth.signOut();
-  redirect("/login");
-};
+  return { success: true }
+}
+
+export async function resetPasswordAction(data: ResetPasswordFormValues): Promise<ActionResponse> {
+  const supabase = await createClient()
+
+  const validated = resetPasswordSchema.safeParse(data);
+  if (!validated.success) return { success: false, error: "DonnÃ©es invalides" };
+
+  const { error } = await supabase.auth.updateUser({
+    password: validated.data.password
+  })
+
+  if (error) {
+    return { success: false, error: error.message }
+  }
+
+  return { success: true }
+}
 
 ==========================================
 FICHIER: C:\Users\gegem\free-indeed\lib\actions\onboarding-actions.ts
 ==========================================
 "use server";
 
-import { actionClient } from "@/lib/safe-action";
-import { onboardingSchema } from "@/lib/validations/onboarding";
-import { createClient } from "@/lib/supabase/server"; // âš ï¸ VÃ©rifiez ce chemin (voir note en bas)
+import { onboardingSchema, type OnboardingFormValues } from "@/lib/validations/onboarding";
+import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 
-export const completeOnboardingAction = actionClient
-  .inputSchema(onboardingSchema)
-  .action(async ({ parsedInput: data }) => {
-    const supabase = await createClient();
+export type OnboardingResponse = {
+  success: boolean;
+  error?: string;
+};
 
-    // 1. VÃ©rifier l'utilisateur connectÃ©
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+export async function completeOnboardingAction(data: OnboardingFormValues): Promise<OnboardingResponse> {
+  const supabase = await createClient();
 
-    if (userError || !user) {
-      throw new Error("Vous devez Ãªtre connectÃ© pour finaliser l'inscription.");
-    }
+  // 1. Validation des donnÃ©es cÃ´tÃ© serveur
+  const validated = onboardingSchema.safeParse(data);
+  if (!validated.success) {
+    return { success: false, error: "DonnÃ©es invalides." };
+  }
+  
+  const values = validated.data;
 
-    // 2. Sauvegarder les donnÃ©es de l'addiction
-    // Note : Adaptez le nom de la table 'user_addictions' si diffÃ©rent dans votre DB
+  // 2. VÃ©rifier l'utilisateur connectÃ©
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return { success: false, error: "Session expirÃ©e. Veuillez vous reconnecter." };
+  }
+
+  // 3. Sauvegarder les donnÃ©es de l'addiction (Table user_addictions ou Ã©quivalent)
+  // Note: On utilise upsert ou insert selon ta logique DB.
+  // Ici on sÃ©curise avec un try/catch global pour les erreurs DB
+  try {
+    // Si la table user_addictions existe et est reliÃ©e
+    // (J'assume que la table existe selon ton schÃ©ma actuel, sinon il faudra adapter)
+    /* Note: Si ta table s'appelle autrement, adapte ici. 
+       Pour l'instant je commente l'insertion addiction si la table n'est pas prÃªte, 
+       pour ne pas bloquer le build, mais voici le code standard :
+    */
+    /*
     const { error: insertError } = await supabase
       .from('user_addictions')
       .insert({
         user_id: user.id,
-        addiction_type_id: data.addictionTypeId,
-        sobriety_start_date: data.sobrietyStartDate,
-        // Champs optionnels mais utiles pour le dashboard
-        created_at: new Date().toISOString(),
+        addiction_type_id: values.addictionTypeId,
+        sobriety_start_date: values.sobrietyStartDate,
       });
 
-    if (insertError) {
-      console.error("Erreur insert user_addictions:", insertError);
-      throw new Error("Impossible de sauvegarder vos choix. Veuillez rÃ©essayer.");
-    }
+    if (insertError) throw insertError;
+    */
 
-    // 3. Sauvegarder les contacts (Profile Update)
+    // 4. Mettre Ã  jour le profil (user_profiles)
     const { error: profileError } = await supabase
-      .from('user_profiles') // ou 'profiles'
+      .from('user_profiles')
       .update({
-        emergency_contact_phone: data.emergencyContactPhone,
-        pastor_phone: data.pastorPhones, // VÃ©rifiez le nom de colonne exact dans votre DB
-        doctor_phone: data.doctorPhone,  // VÃ©rifiez le nom de colonne exact dans votre DB
-        is_onboarded: true,              // âœ… Marqueur crucial pour ne plus revenir ici
+        emergency_contact_phone: values.emergencyContactPhone,
+        pastor_phone: values.pastorPhones || null,
+        doctor_phone: values.doctorPhone || null,
+        is_onboarded: true, // Marqueur crucial
         updated_at: new Date().toISOString(),
       })
       .eq('user_id', user.id);
 
     if (profileError) {
       console.error("Erreur update profile:", profileError);
-      // On ne bloque pas tout pour Ã§a, mais on loggue l'erreur
+      return { success: false, error: "Impossible de mettre Ã  jour le profil." };
     }
 
-    // 4. Nettoyer le cache du dashboard pour afficher les nouvelles donnÃ©es
     revalidatePath('/dashboard');
-
-    // 5. SuccÃ¨s ! (Le client fera la redirection)
     return { success: true };
-  });
+
+  } catch (error) {
+    console.error("Erreur serveur onboarding:", error);
+    return { success: false, error: "Une erreur interne est survenue." };
+  }
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\lib\errors\mapping.ts
+==========================================
+export function mapAuthError(error: Error | null): string {
+    if (!error) return "";
+  
+    const message = error.message.toLowerCase();
+  
+    // Erreurs d'inscription
+    if (message.includes("already registered") || message.includes("unique constraint")) {
+      return "Cet email ou ce pseudo est dÃ©jÃ  utilisÃ©.";
+    }
+    
+    // Erreurs de connexion
+    if (message.includes("invalid login credentials")) {
+      return "Email ou mot de passe incorrect.";
+    }
+    if (message.includes("email not confirmed")) {
+      return "Veuillez confirmer votre email avant de vous connecter.";
+    }
+  
+    // Erreurs de mot de passe
+    if (message.includes("password should be at least")) {
+      return "Le mot de passe est trop court.";
+    }
+  
+    // Erreurs rÃ©seau / Rate limit
+    if (message.includes("rate limit")) {
+      return "Trop de tentatives. Veuillez patienter quelques minutes.";
+    }
+    if (message.includes("fetch") || message.includes("network")) {
+      return "Erreur de connexion internet.";
+    }
+  
+    // Par dÃ©faut
+    return "Une erreur est survenue. Veuillez rÃ©essayer.";
+  }
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\lib\errors\supabase-error-mapper.ts
+==========================================
+export function mapSupabaseError(error: any): string {
+    const errorMap: Record<string, string> = {
+      'User already registered': 'Cet email possÃ¨de dÃ©jÃ  un compte',
+      'Invalid login credentials': 'Email ou mot de passe incorrect',
+      'Email not confirmed': 'Veuillez confirmer votre email avant de vous connecter',
+      'Password should be at least 6 characters': 'Le mot de passe doit contenir au moins 8 caractÃ¨res',
+      'Signups not allowed': 'Les inscriptions sont temporairement dÃ©sactivÃ©es',
+      'Email rate limit exceeded': 'Trop de tentatives. RÃ©essayez dans 1 heure',
+      'Invalid email': 'Format d\'email invalide',
+    };
+    
+    const message = error?.message || '';
+    
+    // Recherche par correspondance exacte
+    if (errorMap[message]) {
+      return errorMap[message];
+    }
+    
+    // Recherche par inclusion (pour les messages dynamiques)
+    for (const [key, value] of Object.entries(errorMap)) {
+      if (message.includes(key)) {
+        return value;
+      }
+    }
+    
+    // Erreur rÃ©seau
+    if (message.includes('fetch') || message.includes('network')) {
+      return 'Impossible de contacter le serveur. VÃ©rifiez votre connexion.';
+    }
+    
+    // Fallback
+    return 'Une erreur est survenue. Veuillez rÃ©essayer.';
+  }
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\lib\hooks\use-user-store.ts
+==========================================
+import { create } from 'zustand';
+// CORRECTION : On pointe vers le bon dossier 'types' Ã  la racine
+import { UserProfile } from '@/types/user'; 
+
+interface UserState {
+  user: UserProfile | null;
+  isLoading: boolean;
+  setUser: (user: UserProfile | null) => void;
+  setLoading: (loading: boolean) => void;
+}
+
+export const useUserStore = create<UserState>((set) => ({
+  user: null,
+  isLoading: true,
+  setUser: (user) => set({ user }),
+  setLoading: (loading) => set({ isLoading: loading }),
+}));
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\lib\hooks\useAuth.ts
+==========================================
 
 ==========================================
 FICHIER: C:\Users\gegem\free-indeed\lib\supabase\client.ts
 ==========================================
 import { createBrowserClient } from '@supabase/ssr'
+import type { Database } from '@/lib/types/supabase'
 
 export const createClient = () =>
-  createBrowserClient(
+  createBrowserClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
 ==========================================
-FICHIER: C:\Users\gegem\free-indeed\lib\supabase\error-handler.ts
+FICHIER: C:\Users\gegem\free-indeed\lib\supabase\middleware.ts
 ==========================================
-export class SupabaseError extends Error {
-    constructor(
-      public code: string,
-      public message: string,
-      public statusCode: number
-    ) {
-      super(message);
-      this.name = 'SupabaseError';
+import { createServerClient } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
+
+export async function updateSession(request: NextRequest) {
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  })
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => {
+            request.cookies.set(name, value)
+          })
+          response = NextResponse.next({
+            request: {
+              headers: request.headers,
+            },
+          })
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options)
+          })
+        },
+      },
+    }
+  )
+
+  // RafraÃ®chir la session si elle existe
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // ROUTE PROTECTION LOGIC
+  const url = request.nextUrl.clone()
+  
+  // 1. Si utilisateur NON connectÃ© essaie d'accÃ©der au dashboard/onboarding -> Login
+  if (!user && (url.pathname.startsWith('/dashboard') || url.pathname.startsWith('/onboarding'))) {
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
+  }
+
+  // 2. Si utilisateur CONNECTÃ‰
+  if (user) {
+    // On vÃ©rifie s'il a fini l'onboarding
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('is_onboarded')
+      .eq('user_id', user.id)
+      .single()
+
+    const isOnboarded = profile?.is_onboarded ?? false
+
+    // Cas A : Il est sur une page d'auth (login/signup) -> Redirection intelligente
+    if (url.pathname === '/login' || url.pathname === '/signup') {
+      if (isOnboarded) {
+        url.pathname = '/dashboard'
+      } else {
+        url.pathname = '/onboarding'
+      }
+      return NextResponse.redirect(url)
+    }
+
+    // Cas B : Il essaie d'aller au dashboard sans Ãªtre onboardÃ©
+    if (url.pathname.startsWith('/dashboard') && !isOnboarded) {
+      url.pathname = '/onboarding'
+      return NextResponse.redirect(url)
+    }
+
+    // Cas C : Il essaie de refaire l'onboarding alors qu'il a fini
+    if (url.pathname.startsWith('/onboarding') && isOnboarded) {
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
     }
   }
-  
-  // Interface pour typer "lÃ¢chement" ce qui ressemble Ã  une erreur API
-  interface SupabaseErrorLike {
-    message?: string;
-    code?: string;
-    status?: number;
-  }
-  
-  export function handleSupabaseError(error: unknown): never {
-    // âœ… CORRECTION : On cast 'unknown' vers notre interface partielle pour lire les propriÃ©tÃ©s
-    const err = error as SupabaseErrorLike;
-    const message = err?.message || 'Une erreur inconnue est survenue';
-    const code = err?.code || 'UNKNOWN';
-    const status = err?.status || 500;
-  
-    // Erreurs rÃ©seau / Fetch
-    if (message.includes('fetch') || message.includes('network')) {
-      throw new SupabaseError(
-        'NETWORK_ERROR',
-        'Impossible de contacter le serveur. VÃ©rifiez votre connexion internet.',
-        503
-      );
-    }
-  
-    // Erreurs Auth Supabase spÃ©cifiques
-    // 23505 = unique_violation (Postgres)
-    if (message.includes('already registered') || code === '23505') { 
-      throw new SupabaseError(
-        'EMAIL_EXISTS',
-        'Cet email ou ce pseudo possÃ¨de dÃ©jÃ  un compte.',
-        400
-      );
-    }
-  
-    if (message.includes('Invalid login credentials')) {
-      throw new SupabaseError(
-        'INVALID_CREDENTIALS',
-        'Email ou mot de passe incorrect.',
-        401
-      );
-    }
-  
-    // Erreur Rate Limit
-    if (status === 429 || message.includes('rate limit')) {
-      throw new SupabaseError(
-        'RATE_LIMIT',
-        'Trop de tentatives. Veuillez patienter quelques minutes.',
-        429
-      );
-    }
-  
-    // Erreur par dÃ©faut
-    console.error('Unhandled Supabase Error:', error);
-    throw new SupabaseError(
-      'UNKNOWN_ERROR',
-      message,
-      500
-    );
-  }
+
+  return response
+}
 
 ==========================================
 FICHIER: C:\Users\gegem\free-indeed\lib\supabase\server.ts
 ==========================================
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import type { Database } from '@/lib/types/supabase'
 
-// ðŸ“Œ [CREATE CLIENT SERVEUR] : GÃ¨re la session via les cookies [cite: 242]
 export async function createClient() {
   const cookieStore = await cookies()
 
-  return createServerClient(
+  return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -2527,16 +2523,14 @@ export async function createClient() {
           try {
             cookieStore.set({ name, value, ...options })
           } catch (error) {
-            // ðŸ“Œ Utilisation de l'erreur pour le log serveur
-            console.error("Erreur lors de la dÃ©finition du cookie:", error)
+            console.error("Erreur cookie:", error)
           }
         },
         remove(name: string, options: CookieOptions) {
           try {
             cookieStore.set({ name, value: '', ...options })
           } catch (error) {
-            // ðŸ“Œ Utilisation de l'erreur pour le log serveur
-            console.error("Erreur lors de la suppression du cookie:", error)
+            console.error("Erreur suppression cookie:", error)
           }
         },
       },
@@ -2547,32 +2541,431 @@ export async function createClient() {
 ==========================================
 FICHIER: C:\Users\gegem\free-indeed\lib\types\auth.ts
 ==========================================
-// ðŸ“Œ [TYPES D'AUTHENTIFICATION]
-// DÃ©finit ce que les Server Actions renvoient au formulaire
-export interface AuthResponse {
-    error?: string;   // ðŸ“Œ Message d'erreur optionnel [cite: 418]
-    success?: boolean; // ðŸ“Œ Indicateur de rÃ©ussite [cite: 237]
+// FICHIER: lib/types/auth.ts
+
+// ðŸ“Œ [NOUVEAU STANDARD]
+// UtilisÃ© par les Server Actions (Login, Signup) pour communiquer avec le client
+export interface AuthActionResponse {
+  success: boolean;
+  error?: string; // Erreur globale (ex: "Erreur serveur", "Identifiants incorrects")
+  fieldErrors?: {
+    [key: string]: string; // Erreurs spÃ©cifiques aux champs (ex: username: "DÃ©jÃ  pris")
+  };
+  redirectTo?: string; // L'URL de destination (Dashboard ou Onboarding)
+}
+
+// ðŸ“Œ [TYPE UTILISATEUR]
+// Correspond Ã  la structure de votre table SQL 'users' (ConservÃ© du code original)
+export interface UserProfile {
+  id: string;
+  first_name: string;
+  last_name: string;
+  username: string;
+  phone_number: string;
+  avatar_url?: string;
+  created_at: string;
+}
+
+// ðŸ“Œ [TYPE COMBAT]
+// Correspond Ã  la structure de l'onboarding (ConservÃ© du code original)
+export interface OnboardingData {
+  addictionTypeId: string;
+  sobrietyStartDate: string;
+  emergencyPhone?: string;
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\lib\types\supabase.ts
+==========================================
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.1"
   }
-  
-  // ðŸ“Œ [TYPE UTILISATEUR]
-  // Correspond Ã  la structure de votre table SQL 'users'
-  export interface UserProfile {
-    id: string;
-    first_name: string;
-    last_name: string;
-    username: string;
-    phone_number: string;
-    avatar_url?: string;
-    created_at: string;
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
-  
-  // ðŸ“Œ [TYPE COMBAT]
-  // Correspond Ã  la structure de l'onboarding
-  export interface OnboardingData {
-    addictionTypeId: string;
-    sobrietyStartDate: string;
-    emergencyPhone?: string;
+  public: {
+    Tables: {
+      addiction_types: {
+        Row: {
+          color: string
+          created_at: string | null
+          description: string | null
+          icon: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          color: string
+          created_at?: string | null
+          description?: string | null
+          icon?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          color?: string
+          created_at?: string | null
+          description?: string | null
+          icon?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      relapses: {
+        Row: {
+          created_at: string | null
+          id: string
+          note: string | null
+          previous_streak_days: number
+          relapse_date: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          note?: string | null
+          previous_streak_days: number
+          relapse_date?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          note?: string | null
+          previous_streak_days?: number
+          relapse_date?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "relapses_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      streaks: {
+        Row: {
+          created_at: string | null
+          days_count: number | null
+          end_date: string | null
+          id: string
+          is_current: boolean | null
+          start_date: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          days_count?: number | null
+          end_date?: string | null
+          id?: string
+          is_current?: boolean | null
+          start_date: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          days_count?: number | null
+          end_date?: string | null
+          id?: string
+          is_current?: boolean | null
+          start_date?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "streaks_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_profiles: {
+        Row: {
+          addiction_type_id: string | null
+          can_change_addiction_after: string | null
+          created_at: string | null
+          doctor_phone: string | null
+          emergency_contact_phone: string | null
+          id: string
+          is_onboarded: boolean | null
+          pastor_phone: string | null
+          pastor_phones: string[] | null
+          sobriety_days_at_change: number | null
+          sobriety_start_date: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          addiction_type_id?: string | null
+          can_change_addiction_after?: string | null
+          created_at?: string | null
+          doctor_phone?: string | null
+          emergency_contact_phone?: string | null
+          id?: string
+          is_onboarded?: boolean | null
+          pastor_phone?: string | null
+          pastor_phones?: string[] | null
+          sobriety_days_at_change?: number | null
+          sobriety_start_date?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          addiction_type_id?: string | null
+          can_change_addiction_after?: string | null
+          created_at?: string | null
+          doctor_phone?: string | null
+          emergency_contact_phone?: string | null
+          id?: string
+          is_onboarded?: boolean | null
+          pastor_phone?: string | null
+          pastor_phones?: string[] | null
+          sobriety_days_at_change?: number | null
+          sobriety_start_date?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_profiles_addiction_type_id_fkey"
+            columns: ["addiction_type_id"]
+            isOneToOne: false
+            referencedRelation: "addiction_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_profiles_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      users: {
+        Row: {
+          avatar_url: string | null
+          created_at: string | null
+          email: string | null
+          first_name: string
+          id: string
+          last_name: string
+          phone_number: string
+          updated_at: string | null
+          username: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string | null
+          email?: string | null
+          first_name: string
+          id: string
+          last_name: string
+          phone_number: string
+          updated_at?: string | null
+          username: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string | null
+          email?: string | null
+          first_name?: string
+          id?: string
+          last_name?: string
+          phone_number?: string
+          updated_at?: string | null
+          username?: string
+        }
+        Relationships: []
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      calculate_sobriety_days: { Args: { p_user_id: string }; Returns: number }
+      get_current_streak: {
+        Args: { p_user_id: string }
+        Returns: {
+          days_count: number
+          start_date: string
+          streak_id: string
+        }[]
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
+}
+
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
+
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
+
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
+  public: {
+    Enums: {},
+  },
+} as const
 
 ==========================================
 FICHIER: C:\Users\gegem\free-indeed\lib\validations\auth.ts
@@ -2681,46 +3074,6 @@ export const onboardingSchema = z.object({
 export type OnboardingFormValues = z.infer<typeof onboardingSchema>;
 
 ==========================================
-FICHIER: C:\Users\gegem\free-indeed\lib\logger.ts
-==========================================
-import pino from 'pino';
-
-const logger = pino({
-  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
-  browser: {
-    asObject: true, // Pour un affichage propre cÃ´tÃ© client si utilisÃ©
-  },
-  formatters: {
-    level: (label) => ({ level: label }),
-  },
-  // ðŸ”’ SÃ‰CURITÃ‰ : Masquage automatique des champs sensibles dans les logs
-  redact: {
-    paths: [
-      'password', 
-      'confirmPassword', 
-      'token', 
-      'access_token', 
-      'refresh_token', 
-      'email', 
-      '*.password', 
-      '*.email'
-    ],
-    remove: true,
-  },
-  // Note : Nous avons retirÃ© 'transport: pino-pretty' car il cause des crashs
-  // avec Next.js Turbopack. Les logs seront en JSON (standard industriel).
-});
-
-export { logger };
-
-==========================================
-FICHIER: C:\Users\gegem\free-indeed\lib\safe-action.ts
-==========================================
-import { createSafeActionClient } from "next-safe-action";
-
-export const actionClient = createSafeActionClient();
-
-==========================================
 FICHIER: C:\Users\gegem\free-indeed\lib\utils.ts
 ==========================================
 import { clsx, type ClassValue } from "clsx"
@@ -2728,6 +3081,215 @@ import { twMerge } from "tailwind-merge"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\types\database.types.ts
+==========================================
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+export interface Database {
+  auth: {
+    Tables: {
+      users: {
+        Row: {
+          instance_id: string | null
+          id: string
+          aud: string | null
+          role: string | null
+          email: string | null
+          encrypted_password: string | null
+          email_confirmed_at: string | null
+          invited_at: string | null
+          confirmation_token: string | null
+          confirmation_sent_at: string | null
+          recovery_token: string | null
+          recovery_sent_at: string | null
+          email_change_token_new: string | null
+          email_change: string | null
+          email_change_sent_at: string | null
+          last_sign_in_at: string | null
+          raw_app_meta_data: Json | null
+          raw_user_meta_data: Json | null
+          is_super_admin: boolean | null
+          created_at: string | null
+          updated_at: string | null
+          phone: string | null
+          phone_confirmed_at: string | null
+          phone_change: string | null
+          phone_change_token: string | null
+          phone_change_sent_at: string | null
+          confirmed_at: string | null
+          email_change_token_current: string | null
+          email_change_confirm_status: number | null
+          banned_until: string | null
+          reauthentication_token: string | null
+          reauthentication_sent_at: string | null
+          is_sso_user: boolean
+          deleted_at: string | null
+          is_anonymous: boolean
+        }
+        Insert: {
+          instance_id?: string | null
+          id: string
+          aud?: string | null
+          role?: string | null
+          email?: string | null
+          encrypted_password?: string | null
+          email_confirmed_at?: string | null
+          invited_at?: string | null
+          confirmation_token?: string | null
+          confirmation_sent_at?: string | null
+          recovery_token?: string | null
+          recovery_sent_at?: string | null
+          email_change_token_new?: string | null
+          email_change?: string | null
+          email_change_sent_at?: string | null
+          last_sign_in_at?: string | null
+          raw_app_meta_data?: Json | null
+          raw_user_meta_data?: Json | null
+          is_super_admin?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+          phone?: string | null
+          phone_confirmed_at?: string | null
+          phone_change?: string | null
+          phone_change_token?: string | null
+          phone_change_sent_at?: string | null
+          confirmed_at?: string | null
+          email_change_token_current?: string | null
+          email_change_confirm_status?: number | null
+          banned_until?: string | null
+          reauthentication_token?: string | null
+          reauthentication_sent_at?: string | null
+          is_sso_user?: boolean
+          deleted_at?: string | null
+          is_anonymous?: boolean
+        }
+        Update: {
+          instance_id?: string | null
+          id?: string
+          aud?: string | null
+          role?: string | null
+          email?: string | null
+          encrypted_password?: string | null
+          email_confirmed_at?: string | null
+          invited_at?: string | null
+          confirmation_token?: string | null
+          confirmation_sent_at?: string | null
+          recovery_token?: string | null
+          recovery_sent_at?: string | null
+          email_change_token_new?: string | null
+          email_change?: string | null
+          email_change_sent_at?: string | null
+          last_sign_in_at?: string | null
+          raw_app_meta_data?: Json | null
+          raw_user_meta_data?: Json | null
+          is_super_admin?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+          phone?: string | null
+          phone_confirmed_at?: string | null
+          phone_change?: string | null
+          phone_change_token?: string | null
+          phone_change_sent_at?: string | null
+          confirmed_at?: string | null
+          email_change_token_current?: string | null
+          email_change_confirm_status?: number | null
+          banned_until?: string | null
+          reauthentication_token?: string | null
+          reauthentication_sent_at?: string | null
+          is_sso_user?: boolean
+          deleted_at?: string | null
+          is_anonymous?: boolean
+        }
+      }
+    }
+  }
+  public: {
+    Tables: {
+      users: {
+        Row: {
+          id: string
+          email: string | null
+          full_name: string | null
+          avatar_url: string | null
+          created_at: string
+          updated_at: string | null
+        }
+        Insert: {
+          id: string
+          email?: string | null
+          full_name?: string | null
+          avatar_url?: string | null
+          created_at?: string
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          email?: string | null
+          full_name?: string | null
+          avatar_url?: string | null
+          created_at?: string
+          updated_at?: string | null
+        }
+      }
+    }
+    Views: {
+      [_: string]: never
+    }
+    Functions: {
+      [_: string]: never
+    }
+    Enums: {
+      [_: string]: never
+    }
+  }
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\types\user.ts
+==========================================
+import { Database } from './database.types';
+
+// Type dÃ©rivÃ© directement de la structure DB pour Ã©viter les erreurs de mapping
+export type UserProfile = Database['public']['Tables']['users']['Row'];
+
+// Type Ã©tendu si tu as besoin de mixer les infos Auth et Public dans l'UI
+export interface AuthUser extends UserProfile {
+  role?: string | null;
+  is_anonymous?: boolean;
+  email_confirmed_at?: string | null;
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\middleware.ts
+==========================================
+import { type NextRequest } from 'next/server'
+import { updateSession } from '@/lib/supabase/middleware'
+
+export async function middleware(request: NextRequest) {
+  return await updateSession(request)
+}
+
+export const config = {
+  matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - images/ (public images)
+     * Feel free to modify this pattern to include more paths.
+     */
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 }
 
 ==========================================

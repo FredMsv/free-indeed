@@ -1,24 +1,28 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Mail, Lock, LogIn, ArrowRight, Loader2 } from 'lucide-react'; // ✅ Ajout Loader2
+import { Mail, Lock, LogIn, ArrowRight, Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+
 import { signInAction } from '@/lib/actions/auth-actions';
 import { signInSchema, type SignInFormValues } from '@/lib/validations/auth';
+import { mapAuthError } from '@/lib/errors/mapping';
 import Input from '@/components/ui/Input';
-import {Button} from '@/components/ui/Button';
-import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/Button';
 
 export default function SignInPage() {
   const [serverError, setServerError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
   const { 
     register, 
     handleSubmit, 
-    formState: { errors, isSubmitting } 
+    formState: { errors } 
   } = useForm<SignInFormValues>({
     resolver: zodResolver(signInSchema),
     defaultValues: {
@@ -27,30 +31,39 @@ export default function SignInPage() {
     }
   });
 
-  const onSubmit = async (data: SignInFormValues) => {
+  const onSubmit = (data: SignInFormValues) => {
     setServerError(null);
-    const result = await signInAction(data);
+    
+    startTransition(async () => {
+      try {
+        const result = await signInAction(data);
 
-    // ✅ CORRECTION 1 : Adaptation next-safe-action v7 (result.serverError / result.data)
-    if (result?.serverError) {
-      setServerError(result.serverError);
-    } else if (result?.data?.success) {
-      // Redirection vers le dashboard après succès
-      router.push('/dashboard');
-      router.refresh();
-    } else {
-      setServerError("Une erreur inconnue est survenue.");
-    }
+        if (!result.success) {
+          const mappedError = mapAuthError(new Error(result.error));
+          setServerError(mappedError);
+          toast.error(mappedError);
+          return;
+        }
+
+        toast.success("Connexion réussie !");
+        // Le middleware s'occupera de rediriger vers /onboarding ou /dashboard si l'utilisateur accède à la home
+        // Mais nous forçons ici pour être explicite
+        router.refresh(); // Important pour sync les cookies
+        router.push(result.redirectTo || '/dashboard');
+        
+      } catch (err) {
+        setServerError("Erreur inattendue.");
+        console.error(err);
+      }
+    });
   };
 
   return (
     <div className="min-h-screen bg-gray-bg flex items-center justify-center p-6">
-      {/* ✅ Ajout d'une animation d'entrée sur la carte */}
       <div className="card max-w-md w-full p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
         
-        {/* ✅ 1. Header avec "Logo" et message d'accueil */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gold/10 mb-4 animate-pulse-slow">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gold/10 mb-4">
             <LogIn className="w-8 h-8 text-gold" strokeWidth={1.5} />
           </div>
           <h1 className="text-2xl font-bold font-sans text-gray-900">Bon retour parmi nous</h1>
@@ -78,13 +91,11 @@ export default function SignInPage() {
             <Input 
               label="Mot de passe"
               isPassword 
-              type="password" 
               placeholder="••••••••"
               icon={Lock} 
               error={errors.password?.message}
               {...register('password')}
             />
-            {/* ✅ 2. Lien Mot de passe oublié */}
             <div className="flex justify-end mt-2">
               <Link 
                 href="/forgot-password" 
@@ -95,13 +106,12 @@ export default function SignInPage() {
             </div>
           </div>
 
-          {/* ✅ CORRECTION 2 : Retrait de 'isLoading' prop inexistante + Ajout Loader interne */}
           <Button 
             type="submit" 
             className="w-full mt-6" 
-            disabled={isSubmitting} 
+            disabled={isPending} 
           >
-             {isSubmitting ? (
+            {isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <ArrowRight className="mr-2 h-4 w-4" />
@@ -110,7 +120,6 @@ export default function SignInPage() {
           </Button>
         </form>
 
-        {/* ✅ 3. Footer amélioré */}
         <div className="mt-8 text-center text-sm text-gray-500 border-t border-gray-100 pt-6">
           <p>
             Pas encore de compte ?{' '}

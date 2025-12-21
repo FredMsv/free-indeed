@@ -1,35 +1,36 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Mail, User, Lock, UserPlus, Check, X, Loader2 } from 'lucide-react';
+import { Mail, User, Lock, UserPlus, Loader2, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
+
 import { signUpAction } from '@/lib/actions/auth-actions';
 import { signUpSchema, type SignUpFormValues } from '@/lib/validations/auth';
-
-// ✅ IMPORTS CORRECTS
-import { Button } from '@/components/ui/Button'; // Named export
-import Input from '@/components/ui/Input';       // Default export
-import PhoneInput from '@/components/ui/PhoneInput'; // Default export
+import { mapAuthError } from '@/lib/errors/mapping';
+import { Button } from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import PhoneInput from '@/components/ui/PhoneInput';
 import PasswordStrengthIndicator from '@/components/ui/PasswordStrengthIndicator';
 
 export default function SignUpPage() {
   const [serverError, setServerError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
   const router = useRouter();
-  
-  const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
 
   const { 
     register, 
-    control, 
     handleSubmit, 
     setValue,
-    formState: { errors, isSubmitting, isValid } 
+    setError,
+    control,
+    formState: { errors } 
   } = useForm<SignUpFormValues>({
-    resolver: zodResolver(signUpSchema), // ✅ Maintenant le schéma contient bien firstName, etc.
-    mode: "onTouched", 
+    resolver: zodResolver(signUpSchema),
+    mode: "onBlur", 
     defaultValues: {
       username: '',
       email: '',
@@ -40,57 +41,57 @@ export default function SignUpPage() {
     }
   });
 
-  // ✅ CORRECTION TYPAGE : as string pour éviter les erreurs d'objets imbriqués
-  const usernameValue = useWatch({ control, name: 'username' }) as string;
-  const emailValue = useWatch({ control, name: 'email' }) as string;
-  const passwordValue = useWatch({ control, name: 'password' }) as string;
-  const phoneNumberValue = useWatch({ control, name: 'phoneNumber' }) as string;
+  const passwordValue = useWatch({ 
+    control, 
+    name: 'password', 
+    defaultValue: ''
+  });
 
-  // 🔍 Check Username logic
-  useEffect(() => {
-    const timer = setTimeout(async () => {
-      if (!usernameValue || usernameValue.length < 3) {
-        setUsernameStatus('idle');
-        return;
-      }
+  const phoneNumberValue = useWatch({ 
+    control, 
+    name: 'phoneNumber',
+    defaultValue: '' 
+  });
 
-      setUsernameStatus('checking');
-
-      try {
-        const res = await fetch(`/api/check-username?username=${usernameValue}`);
-        const data = await res.json();
-        setUsernameStatus(data.available ? 'available' : 'taken');
-      } catch {
-        setUsernameStatus('idle');
-      }
-    }, 800);
-
-    return () => clearTimeout(timer);
-  }, [usernameValue]);
-
-  const onSubmit = async (data: SignUpFormValues) => {
-    if (usernameStatus === 'taken' || usernameStatus === 'checking') return;
-    
+  const onSubmit = (data: SignUpFormValues) => {
     setServerError(null);
-    const result = await signUpAction(data);
     
-    // ✅ GESTION ERREUR TYPE-SAFE
-    // next-safe-action v7 retourne { data, serverError, validationErrors }
-    if (result?.serverError) {
-      setServerError(result.serverError);
-    } else if (result?.data?.success) {
-      router.push('/signup/success');
-    } else {
-      setServerError("Une erreur inconnue est survenue.");
-    }
-  };
+    startTransition(async () => {
+      try {
+        const result = await signUpAction(data);
+        
+        if (!result.success) {
+          // Gestion des erreurs de champs spécifiques
+          if (result.fieldErrors) {
+            Object.entries(result.fieldErrors).forEach(([field, message]) => {
+              setError(field as keyof SignUpFormValues, {
+                type: "server",
+                message: message
+              });
+            });
+            toast.error("Veuillez corriger les erreurs indiquées.");
+            return;
+          }
 
-  const isButtonDisabled = 
-    !isValid ||                   
-    !!errors.email ||             
-    !emailValue ||                
-    usernameStatus === 'taken' || 
-    usernameStatus === 'checking';
+          // Gestion de l'erreur globale traduite
+          const mappedError = mapAuthError(new Error(result.error));
+          setServerError(mappedError);
+          toast.error(mappedError);
+          return;
+        }
+
+        // Succès
+        toast.success("Compte créé avec succès !");
+        if (result.redirectTo) {
+          router.push(result.redirectTo);
+        }
+      } catch {
+        const message = "Une erreur inattendue est survenue.";
+        setServerError(message);
+        toast.error(message);
+      }
+    });
+  };
 
   return (
     <div className="min-h-screen bg-gray-bg flex items-center justify-center p-6">
@@ -98,12 +99,17 @@ export default function SignUpPage() {
         <h1 className="text-3xl font-bold text-center mb-8 font-sans">Créer un compte</h1>
         
         {serverError && (
-          <div className="bg-error/10 text-error p-3 rounded-xl mb-6 text-center text-sm font-medium">
-            {serverError}
+          <div className="bg-error/10 text-error p-4 rounded-xl mb-6 text-sm font-medium flex items-start gap-3 animate-in slide-in-from-top-2">
+            <AlertCircle size={20} className="flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-semibold mb-1">Erreur de création de compte</p>
+              <p>{serverError}</p>
+            </div>
           </div>
         )}
         
         <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          
           <Input 
             label="Prénom" 
             placeholder="Ex: Thomas" 
@@ -120,31 +126,16 @@ export default function SignUpPage() {
             error={errors.lastName?.message} 
           />
           
-          <div className="relative">
-            <Input 
-              label="Pseudo" 
-              placeholder="Ex: Warrior_77" 
-              icon={User} 
-              {...register('username', {
-                onChange: (e) => {
-                  if (e.target.value.length >= 3) {
-                    setUsernameStatus('checking');
-                  } else {
-                    setUsernameStatus('idle');
-                  }
-                }
-              })} 
-              error={errors.username?.message || (usernameStatus === 'taken' ? "Ce pseudo est déjà pris" : undefined)} 
-            />
-            <div className="absolute right-3 top-[38px]">
-              {usernameStatus === 'checking' && <Loader2 size={18} className="animate-spin text-gray-400" />}
-              {usernameStatus === 'available' && <Check size={18} className="text-success" />}
-              {usernameStatus === 'taken' && <X size={18} className="text-error" />}
-            </div>
-          </div>
+          <Input 
+            label="Pseudo" 
+            placeholder="Ex: Warrior_77" 
+            icon={User} 
+            {...register('username')} 
+            error={errors.username?.message}
+          />
 
           <PhoneInput 
-            value={phoneNumberValue || ''}
+            value={phoneNumberValue}
             onChange={(val) => setValue('phoneNumber', val)}
             error={errors.phoneNumber?.message}
           />
@@ -155,7 +146,7 @@ export default function SignUpPage() {
               placeholder="thomas@exemple.com" 
               icon={Mail} 
               {...register('email')} 
-              error={errors.email?.message} 
+              error={errors.email?.message}
             />
           </div>
 
@@ -168,15 +159,15 @@ export default function SignUpPage() {
               error={errors.password?.message}
               {...register('password')}
             />
-            <PasswordStrengthIndicator passwordValue={passwordValue || ''} />
+            {passwordValue && <PasswordStrengthIndicator passwordValue={passwordValue} />}
           </div>
 
           <Button 
             type="submit" 
             className="md:col-span-2 mt-6" 
-            disabled={isButtonDisabled || isSubmitting}
+            disabled={isPending}
           >
-            {isSubmitting ? (
+            {isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <UserPlus className="mr-2 h-4 w-4" />

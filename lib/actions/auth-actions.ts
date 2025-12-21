@@ -1,100 +1,136 @@
-"use server";
+'use server'
 
-// ✅ Vérifiez bien que ce chemin est correct selon votre structure
-import { createClient } from "@/lib/supabase/server"; 
-import { actionClient } from "@/lib/safe-action";
-import {
-  signUpSchema,
-  signInSchema,
-  forgotPasswordSchema,
-  resetPasswordSchema,
-} from "@/lib/validations/auth";
-import { redirect } from "next/navigation";
+import { createClient } from '@/lib/supabase/server'
+import { signUpSchema, signInSchema, type SignUpFormValues, type SignInFormValues } from '@/lib/validations/auth'
+import { redirect } from 'next/navigation'
 
-// --- SIGN UP ---
-export const signUpAction = actionClient
-  .schema(signUpSchema)
-  .action(async ({ parsedInput: data }) => {
-    const supabase = await createClient(); // ✅ AJOUT DE AWAIT
+export type ActionResponse = {
+  success: boolean
+  error?: string
+  fieldErrors?: Record<string, string>
+  redirectTo?: string
+}
 
-    const { error: authError } = await supabase.auth.signUp({
-      email: data.email,
-      password: data.password,
-      options: {
-        data: {
-          full_name: `${data.firstName} ${data.lastName}`,
-          username: data.username,
-          phone_number: data.phoneNumber,
-        },
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
+export async function signUpAction(data: SignUpFormValues): Promise<ActionResponse> {
+  const supabase = await createClient()
+
+  // 1. Validation des données
+  const validatedFields = signUpSchema.safeParse(data)
+  if (!validatedFields.success) {
+    return {
+      success: false,
+      error: "Données invalides",
+      fieldErrors: validatedFields.error.flatten().fieldErrors as Record<string, string>
+    }
+  }
+
+  const { email, password, username, firstName, lastName, phoneNumber } = validatedFields.data
+
+  // 2. Vérification d'unicité (Pseudo/Email) via RPC ou Query simple
+  // On vérifie d'abord le pseudo car Auth gère l'email
+  const { data: existingUser } = await supabase
+    .from('users')
+    .select('username')
+    .eq('username', username)
+    .single()
+
+  if (existingUser) {
+    return {
+      success: false,
+      fieldErrors: { username: "Ce pseudo est déjà utilisé." }
+    }
+  }
+
+  // 3. Création du compte Auth
+  // NOTE: Le trigger SQL 'on_auth_user_created' s'occupera de remplir public.users et public.user_profiles
+  const { error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        first_name: firstName,
+        last_name: lastName,
+        username: username,
+        phone_number: phoneNumber,
       },
-    });
+      // Important pour rediriger après confirmation email si activé
+      emailRedirectTo: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/auth/callback`
+    },
+  })
 
-    if (authError) {
-      if (authError.message.includes("already registered")) {
-        throw new Error("Cet email possède déjà un compte.");
-      }
-      throw new Error("Impossible de créer le compte. Contactez le support.");
-    }
+  if (error) {
+    return { success: false, error: error.message }
+  }
 
-    return { success: true };
-  });
+  // Succès
+  return { success: true, redirectTo: '/signup/success' }
+}
 
-// --- SIGN IN ---
-export const signInAction = actionClient
-  .schema(signInSchema)
-  .action(async ({ parsedInput: data }) => {
-    const supabase = await createClient(); // ✅ AJOUT DE AWAIT
+export async function signInAction(data: SignInFormValues): Promise<ActionResponse> {
+  const supabase = await createClient()
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: data.email,
-      password: data.password,
-    });
+  const validatedFields = signInSchema.safeParse(data)
+  if (!validatedFields.success) {
+    return { success: false, error: "Format invalide" }
+  }
 
-    if (authError) {
-      throw new Error("Email ou mot de passe incorrect.");
-    }
+  const { email, password } = validatedFields.data
 
-    return { success: true };
-  });
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  })
 
-// --- FORGOT PASSWORD ---
-export const forgotPasswordAction = actionClient
-  .schema(forgotPasswordSchema)
-  .action(async ({ parsedInput: data }) => {
-    const supabase = await createClient(); // ✅ AJOUT DE AWAIT
+  if (error) {
+    return { success: false, error: error.message }
+  }
 
-    const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/reset-password`,
-    });
+  // La redirection est gérée côté client ou via middleware, mais on peut renvoyer l'URL
+  return { success: true, redirectTo: '/dashboard' } // Le middleware ajustera si onboarding nécessaire
+}
 
-    if (error) {
-      console.error("Forgot password error:", error.message);
-    } 
+export async function signOutAction() {
+  const supabase = await createClient()
+  await supabase.auth.signOut()
+  redirect('/login')
+}
 
-    return { success: true };
-  });
+// ... (Code précédent signUpAction, signInAction, signOutAction) ...
 
-// --- RESET PASSWORD ---
-export const resetPasswordAction = actionClient
-  .schema(resetPasswordSchema)
-  .action(async ({ parsedInput: data }) => {
-    const supabase = await createClient(); // ✅ AJOUT DE AWAIT
+// AJOUTS POUR COMPATIBILITÉ ET PHASE 2
+import { forgotPasswordSchema, resetPasswordSchema, type ForgotPasswordFormValues, type ResetPasswordFormValues } from '@/lib/validations/auth'
 
-    const { error } = await supabase.auth.updateUser({
-      password: data.password,
-    });
+export async function forgotPasswordAction(data: ForgotPasswordFormValues): Promise<ActionResponse> {
+  const supabase = await createClient()
+  
+  const validated = forgotPasswordSchema.safeParse(data);
+  if (!validated.success) return { success: false, error: "Email invalide" };
 
-    if (error) {
-      throw new Error("Impossible de modifier le mot de passe.");
-    }
+  const { error } = await supabase.auth.resetPasswordForEmail(validated.data.email, {
+    redirectTo: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/reset-password`,
+  })
 
-    return { success: true };
-  });
+  // Sécurité: on ne dit jamais si l'email n'existe pas
+  if (error) {
+    console.error("Reset password error:", error);
+  }
 
-// --- SIGN OUT ---
-export const signOutAction = async () => {
-  const supabase = await createClient(); // ✅ AJOUT DE AWAIT
-  await supabase.auth.signOut();
-  redirect("/login");
-};
+  return { success: true }
+}
+
+export async function resetPasswordAction(data: ResetPasswordFormValues): Promise<ActionResponse> {
+  const supabase = await createClient()
+
+  const validated = resetPasswordSchema.safeParse(data);
+  if (!validated.success) return { success: false, error: "Données invalides" };
+
+  const { error } = await supabase.auth.updateUser({
+    password: validated.data.password
+  })
+
+  if (error) {
+    return { success: false, error: error.message }
+  }
+
+  return { success: true }
+}
