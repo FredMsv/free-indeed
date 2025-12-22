@@ -12,7 +12,7 @@ export type OnboardingResponse = {
 export async function completeOnboardingAction(data: OnboardingFormValues): Promise<OnboardingResponse> {
   const supabase = await createClient();
   
-  // 1. Validation des données côté serveur
+  // 1. Validation des données
   const validated = onboardingSchema.safeParse(data);
   if (!validated.success) {
     return { success: false, error: "Données invalides." };
@@ -20,37 +20,51 @@ export async function completeOnboardingAction(data: OnboardingFormValues): Prom
   
   const values = validated.data;
 
-  // 2. Vérifier l'utilisateur connecté
+  // 2. Vérifier User
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) {
     return { success: false, error: "Session expirée. Veuillez vous reconnecter." };
   }
 
-  // 3. Sauvegarder les données
   try {
+    // 3. Préparation des données
+
     // Nettoyage des téléphones pasteurs (retirer les entrées vides)
     const cleanPastorPhones = values.pastorPhones 
       ? values.pastorPhones.filter(p => p && p.trim().length > 0)
       : null;
 
-    // Pour la compatibilité avec l'ancienne colonne 'pastor_phone' (singulier), on prend le premier numéro
+    // Pour rétro-compatibilité (premier numéro)
     const primaryPastorPhone = cleanPastorPhones && cleanPastorPhones.length > 0 
       ? cleanPastorPhones[0] 
       : null;
 
-    // 4. Mettre à jour le profil (user_profiles)
+    // ✅ CRUCIAL : On rassemble toutes les habitudes dans un objet JSON pour la colonne 'habits'
+    const habitsData = {
+      emotional_triggers: values.emotionalTriggers || [],
+      context_habits: values.contextHabits || [],
+      specific_behaviors: values.specificBehaviors || []
+    };
+
+    // 4. Update User Profile
     const { error: profileError } = await supabase
       .from('user_profiles')
       .update({
-        emergency_contact_phone: values.emergencyContactPhone,
+        // ✅ ENREGISTREMENT DE L'ADDICTION ET DE LA DATE
+        addiction_type_id: values.addictionTypeId,
+        sobriety_start_date: values.sobrietyStartDate, 
         
-        // On sauvegarde le tableau complet
+        // ✅ ENREGISTREMENT DES HABITUDES (JSON)
+        habits: habitsData,
+
+        // Contacts
+        emergency_contact_phone: values.emergencyContactPhone || null,
         pastor_phones: cleanPastorPhones,
-        // On sauvegarde le premier pour compatibilité
         pastor_phone: primaryPastorPhone,
-        
         doctor_phone: values.doctorPhone || null,
-        is_onboarded: true, // Marqueur crucial
+        
+        // Validation du statut
+        is_onboarded: true, 
         updated_at: new Date().toISOString(),
       })
       .eq('user_id', user.id);

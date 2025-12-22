@@ -256,10 +256,11 @@ FICHIER: C:\Users\gegem\free-indeed\app\(auth)\onboarding\page.tsx
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useForm, useWatch } from 'react-hook-form';
+// âœ… Import de Controller indispensable pour les champs dynamiques
+import { useForm, useWatch, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, ChevronLeft, Save, Check, Loader2, LucideIcon } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Save, Check, Loader2, LucideIcon, Plus, Trash2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { onboardingSchema, type OnboardingFormValues } from '@/lib/validations/onboarding';
@@ -278,8 +279,6 @@ const SelectionCard = ({
   selected, 
   onClick 
 }: { 
-  // Note: On retire 'id' des props requises ici car on ne l'utilise pas dans le rendu visuel de la card
-  // Cela simplifie l'appel du composant
   id?: string, 
   label: string, 
   icon?: LucideIcon, 
@@ -316,18 +315,16 @@ const SelectionCard = ({
   </div>
 );
 
-// Correction Type : icon peut Ãªtre null venant de la BDD
 type AddictionType = { id: string; name: string; icon: string | null; };
-
-// Type pour les champs qui sont des tableaux (pour le helper toggle)
 type MultiSelectField = 'emotionalTriggers' | 'contextHabits' | 'specificBehaviors';
 
 export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [direction, setDirection] = useState(0);
   const [serverError, setServerError] = useState<string | null>(null);
-  const router = useRouter();
+  const [isStepLocked, setIsStepLocked] = useState(false);
 
+  const router = useRouter();
   const [addictions, setAddictions] = useState<AddictionType[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [isLoadingAddictions, setIsLoadingAddictions] = useState(true);
@@ -335,6 +332,12 @@ export default function OnboardingPage() {
   const today = new Date();
   const oneYearAgo = new Date();
   oneYearAgo.setFullYear(today.getFullYear() - 1);
+
+  // Timer anti double-clic
+  useEffect(() => {
+    const timer = setTimeout(() => setIsStepLocked(false), 800);
+    return () => clearTimeout(timer);
+  }, [step]);
 
   const {
     handleSubmit,
@@ -355,12 +358,17 @@ export default function OnboardingPage() {
       contextHabits: [],
       specificBehaviors: [],
       emergencyContactPhone: '',
-      pastorPhones: '',
+      pastorPhones: [''], // Un champ vide par dÃ©faut
       doctorPhone: ''
     }
   });
 
-  // Watchers avec Casting explicite pour Ã©viter les erreurs "includes does not exist"
+  // Gestion dynamique des champs Pasteurs
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: "pastorPhones" as never, 
+  });
+
   const selectedAddictionId = useWatch({ control, name: 'addictionTypeId' });
   const sobrietyDate = useWatch({ control, name: 'sobrietyStartDate' });
   
@@ -369,7 +377,6 @@ export default function OnboardingPage() {
   const specificBehaviors = (useWatch({ control, name: 'specificBehaviors' }) || []) as string[];
 
   const emergencyPhoneValue = useWatch({ control, name: 'emergencyContactPhone' });
-  const pastorPhoneValue = useWatch({ control, name: 'pastorPhones' });
   const doctorPhoneValue = useWatch({ control, name: 'doctorPhone' });
 
   // 1. Fetch Addictions
@@ -385,7 +392,6 @@ export default function OnboardingPage() {
     fetchAddictions();
   }, []);
 
-  // Helper TypÃ© Correctement
   const toggleSelection = (field: MultiSelectField, currentArray: string[], value: string) => {
     const newArray = currentArray.includes(value)
       ? currentArray.filter(item => item !== value)
@@ -395,15 +401,21 @@ export default function OnboardingPage() {
   };
 
   const handleNext = () => {
+    if (isStepLocked) return;
+
     if (step === 1 && (!selectedAddictionId || !sobrietyDate)) {
       toast.error("Veuillez remplir les champs obligatoires");
       return;
     }
+
+    setIsStepLocked(true);
     setDirection(1);
     setStep(s => s + 1);
   };
 
   const handleBack = () => {
+    if (isStepLocked) return;
+    setIsStepLocked(true);
     setDirection(-1);
     setStep(s => s - 1);
   };
@@ -424,7 +436,6 @@ export default function OnboardingPage() {
   const selectedAddictionName = addictions.find(a => a.id === selectedAddictionId)?.name || 'default';
   const specificOptions = SPECIFIC_BEHAVIORS[selectedAddictionName] || SPECIFIC_BEHAVIORS['default'];
 
-  // Correction Transition : Utilisation de "as const" pour le typage strict Framer Motion
   const variants = {
     enter: (direction: number) => ({ x: direction > 0 ? "100%" : "-100%", opacity: 0 }),
     center: { x: 0, opacity: 1 },
@@ -521,7 +532,7 @@ export default function OnboardingPage() {
                 {specificOptions.map((item) => (
                   <SelectionCard 
                     key={item.id}
-                    id={item.id} // âœ… Correction: Passage explicite de l'ID manquant
+                    id={item.id} 
                     label={item.label} 
                     icon={item.icon}
                     selected={specificBehaviors.includes(item.id)} 
@@ -534,14 +545,75 @@ export default function OnboardingPage() {
             {/* STEP 5: Contacts */}
             {step === 5 && (
               <motion.div key="step5" custom={direction} variants={variants} initial="enter" animate="center" exit="exit" transition={transition} className="space-y-6 absolute w-full h-full overflow-y-auto pb-20">
+                
+                {/* Contact SOS (Optionnel maintenant) */}
                 <div className="bg-red-50 p-4 rounded-xl border border-red-100">
-                    <label className="text-sm font-medium text-red-800 block mb-2">Contact SOS (Obligatoire)</label>
+                    {/* âœ… CORRECTION LABEL : "Optionnel" au lieu de "Obligatoire" */}
+                    <label className="text-sm font-medium text-red-800 block mb-2">Contact SOS (Optionnel)</label>
                     <PhoneInput value={emergencyPhoneValue || ''} onChange={(v) => setValue('emergencyContactPhone', v)} error={errors.emergencyContactPhone?.message} />
+                    <p className="text-xs text-red-600/80 mt-2">RecommandÃ© en cas de forte tentation.</p>
                 </div>
+
                 <div className="space-y-4">
-                    <label className="text-sm font-medium text-gray-700 block">Autres soutiens (Optionnel)</label>
-                    <PhoneInput value={pastorPhoneValue || ''} onChange={(v) => setValue('pastorPhones', v)} />
-                    <PhoneInput value={doctorPhoneValue || ''} onChange={(v) => setValue('doctorPhone', v)} />
+                    <label className="text-sm font-medium text-gray-700 block">Pasteurs ou Mentors (Optionnel)</label>
+                    
+                    {/* LISTE DYNAMIQUE DES PASTEURS */}
+                    <div className="space-y-3">
+                        {fields.map((field, index) => (
+                            <div key={field.id} className="flex items-start gap-2">
+                                <div className="flex-1">
+                                    {/* âœ… CORRECTION FOCUS : Utilisation de Controller + field.id comme key */}
+                                    <Controller
+                                      control={control}
+                                      name={`pastorPhones.${index}`}
+                                      render={({ field: { onChange, value } }) => (
+                                        <PhoneInput 
+                                            value={value} 
+                                            onChange={onChange}
+                                            // Placeholder dynamique pour guider
+                                            // placeholder={`NumÃ©ro pasteur ${index + 1}`} 
+                                        />
+                                      )}
+                                    />
+                                </div>
+                                {/* âœ… CORRECTION : Bouton supprimer dÃ¨s le 2Ã¨me champ (index 1) */}
+                                {index > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => remove(index)}
+                                        className="mt-1 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                        title="Supprimer ce numÃ©ro"
+                                    >
+                                        <Trash2 size={20} />
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+
+                        {/* âœ… CORRECTION LIMITE : Message si 3 numÃ©ros atteints, sinon bouton Ajouter */}
+                        {fields.length < 3 ? (
+                            <button
+                                type="button"
+                                onClick={() => append('')}
+                                className="flex items-center gap-2 text-sm font-medium text-gold hover:text-gold-accent transition-colors px-1 py-1"
+                            >
+                                <div className="w-5 h-5 rounded-full border border-gold flex items-center justify-center">
+                                    <Plus size={12} strokeWidth={3} />
+                                </div>
+                                Ajouter un autre numÃ©ro
+                            </button>
+                        ) : (
+                            <div className="flex items-center gap-2 text-xs text-warning font-medium bg-warning/10 p-2 rounded-lg animate-in fade-in">
+                                <AlertCircle size={14} />
+                                Vous avez atteint le nombre maximum de 3 contacts.
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="pt-2 border-t border-gray-100">
+                        <label className="text-sm font-medium text-gray-700 block mb-2">MÃ©decin (Optionnel)</label>
+                        <PhoneInput value={doctorPhoneValue || ''} onChange={(v) => setValue('doctorPhone', v)} />
+                    </div>
                 </div>
               </motion.div>
             )}
@@ -551,18 +623,36 @@ export default function OnboardingPage() {
           {/* Navigation Buttons */}
           <div className="absolute bottom-0 left-0 right-0 bg-white pt-4 border-t border-gray-100 flex gap-3">
             {step > 1 && (
-                <Button type="button" variant="secondary" onClick={handleBack} className="flex-1">
+                <Button 
+                    type="button" 
+                    variant="secondary" 
+                    onClick={handleBack} 
+                    className="flex-1"
+                    disabled={isStepLocked}
+                >
                     <ChevronLeft className="mr-2 h-4 w-4" /> Retour
                 </Button>
             )}
             {step < 5 ? (
-                <Button type="button" onClick={handleNext} className="flex-[2]">
+                <Button 
+                    type="button" 
+                    onClick={handleNext} 
+                    className="flex-[2]"
+                    disabled={isStepLocked}
+                >
                     Continuer <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>
             ) : (
-                <Button type="submit" disabled={isSubmitting} className="flex-[2]">
-                    {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Terminer <Save className="ml-2 h-4 w-4" />
+                <Button 
+                    type="submit" 
+                    disabled={isSubmitting || isStepLocked} 
+                    className="flex-[2]"
+                >
+                    {isSubmitting ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                        <>Terminer <Save className="ml-2 h-4 w-4" /></>
+                    )}
                 </Button>
             )}
           </div>
@@ -2133,7 +2223,6 @@ export async function signUpAction(data: SignUpFormValues): Promise<AuthResponse
   const { email, password, username, firstName, lastName, phoneNumber, gender, birthDate } = validated.data;
 
   // Normalisation basique du tÃ©lÃ©phone pour la recherche (suppression des espaces)
-  // IdÃ©alement, utilisez libphonenumber-js pour un formatage E.164 parfait (+33...)
   const normalizedPhoneSearch = phoneNumber?.replace(/\s/g, ''); 
 
   // -------------------------------------------------------------------------
@@ -2175,9 +2264,6 @@ export async function signUpAction(data: SignUpFormValues): Promise<AuthResponse
 
   // C. VÃ©rifier le TÃ‰LÃ‰PHONE (Tentative manuelle)
   if (normalizedPhoneSearch) {
-    // On essaie de chercher le numÃ©ro tel quel OU sans espaces
-    // Note: Cela peut Ã©chouer si le format en base est diffÃ©rent (ex: +33 vs 06)
-    // C'est pourquoi le "Filet de sÃ©curitÃ©" plus bas est crucial.
     const { data: existingPhone } = await supabaseAdmin
       .from("user_profiles")
       .select("phone_number")
@@ -2194,15 +2280,21 @@ export async function signUpAction(data: SignUpFormValues): Promise<AuthResponse
   // -------------------------------------------------------------------------
   const supabase = await createClient();
 
+  // On dÃ©finit l'URL de base pour la redirection (localhost en dev, domaine en prod)
+  const origin = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+
   const { error } = await supabase.auth.signUp({
     email,
     password,
     options: {
+      // âœ… CORRECTION 1 : On force la redirection vers la route API qui Ã©change le code
+      emailRedirectTo: `${origin}/auth/callback`,
+      
       data: {
         username,
         first_name: firstName,
         last_name: lastName,
-        phone_number: phoneNumber, // On envoie le numÃ©ro tel que saisi (ou normalisÃ© selon vos prÃ©fÃ©rences)
+        phone_number: phoneNumber,
         gender: gender,
         birth_date: birthDate,
       },
@@ -2213,24 +2305,20 @@ export async function signUpAction(data: SignUpFormValues): Promise<AuthResponse
     console.error("Erreur Signup Supabase:", error);
 
     // --- FILET DE SÃ‰CURITÃ‰ ---
-    // Si la vÃ©rification manuelle a Ã©chouÃ© (formatage) mais que Supabase rejette le numÃ©ro :
     const errorMessage = error.message.toLowerCase();
     
-    // DÃ©tection des erreurs de duplication (Email ou TÃ©lÃ©phone)
     if (errorMessage.includes("already registered") || errorMessage.includes("user already exists") || errorMessage.includes("duplicate")) {
-       // Si on est ici, c'est probablement le tÃ©lÃ©phone car l'email a Ã©tÃ© checkÃ© juste avant.
-       // On renvoie une erreur ciblÃ©e sur le champ tÃ©lÃ©phone pour Ã©viter la banniÃ¨re gÃ©nÃ©rique.
        return { 
          success: false, 
          fieldErrors: { phoneNumber: "Ce numÃ©ro (ou cet email) est dÃ©jÃ  associÃ© Ã  un compte." } 
        };
     }
     
-    // Erreur technique rÃ©elle
     return { success: false, error: error.message };
   }
 
-  return { success: true, redirectTo: "/onboarding" };
+  // âœ… CORRECTION 2 : On redirige vers la page publique de succÃ¨s (pas l'onboarding protÃ©gÃ©)
+  return { success: true, redirectTo: "/signup/success" };
 }
 
 export async function signInAction(data: SignInFormValues): Promise<ActionResponse> {
@@ -2249,7 +2337,6 @@ export async function signInAction(data: SignInFormValues): Promise<ActionRespon
   })
 
   if (error) {
-    // AmÃ©lioration UX: Message plus clair pour "Invalid login credentials"
     return { success: false, error: "Email ou mot de passe incorrect." }
   }
 
@@ -2274,7 +2361,6 @@ export async function forgotPasswordAction(data: ForgotPasswordFormValues): Prom
 
   if (error) {
     console.error("Reset password error:", error);
-    // Optionnel : ne pas retourner l'erreur exacte pour sÃ©curitÃ©, ou si :
     return { success: false, error: "Impossible d'envoyer l'email." };
   }
 
@@ -2314,7 +2400,7 @@ export type OnboardingResponse = {
 
 export async function completeOnboardingAction(data: OnboardingFormValues): Promise<OnboardingResponse> {
   const supabase = await createClient();
-
+  
   // 1. Validation des donnÃ©es cÃ´tÃ© serveur
   const validated = onboardingSchema.safeParse(data);
   if (!validated.success) {
@@ -2325,39 +2411,33 @@ export async function completeOnboardingAction(data: OnboardingFormValues): Prom
 
   // 2. VÃ©rifier l'utilisateur connectÃ©
   const { data: { user }, error: userError } = await supabase.auth.getUser();
-
   if (userError || !user) {
     return { success: false, error: "Session expirÃ©e. Veuillez vous reconnecter." };
   }
 
-  // 3. Sauvegarder les donnÃ©es de l'addiction (Table user_addictions ou Ã©quivalent)
-  // Note: On utilise upsert ou insert selon ta logique DB.
-  // Ici on sÃ©curise avec un try/catch global pour les erreurs DB
+  // 3. Sauvegarder les donnÃ©es
   try {
-    // Si la table user_addictions existe et est reliÃ©e
-    // (J'assume que la table existe selon ton schÃ©ma actuel, sinon il faudra adapter)
-    /* Note: Si ta table s'appelle autrement, adapte ici. 
-       Pour l'instant je commente l'insertion addiction si la table n'est pas prÃªte, 
-       pour ne pas bloquer le build, mais voici le code standard :
-    */
-    /*
-    const { error: insertError } = await supabase
-      .from('user_addictions')
-      .insert({
-        user_id: user.id,
-        addiction_type_id: values.addictionTypeId,
-        sobriety_start_date: values.sobrietyStartDate,
-      });
+    // Nettoyage des tÃ©lÃ©phones pasteurs (retirer les entrÃ©es vides)
+    const cleanPastorPhones = values.pastorPhones 
+      ? values.pastorPhones.filter(p => p && p.trim().length > 0)
+      : null;
 
-    if (insertError) throw insertError;
-    */
+    // Pour la compatibilitÃ© avec l'ancienne colonne 'pastor_phone' (singulier), on prend le premier numÃ©ro
+    const primaryPastorPhone = cleanPastorPhones && cleanPastorPhones.length > 0 
+      ? cleanPastorPhones[0] 
+      : null;
 
     // 4. Mettre Ã  jour le profil (user_profiles)
     const { error: profileError } = await supabase
       .from('user_profiles')
       .update({
         emergency_contact_phone: values.emergencyContactPhone,
-        pastor_phone: values.pastorPhones || null,
+        
+        // On sauvegarde le tableau complet
+        pastor_phones: cleanPastorPhones,
+        // On sauvegarde le premier pour compatibilitÃ©
+        pastor_phone: primaryPastorPhone,
+        
         doctor_phone: values.doctorPhone || null,
         is_onboarded: true, // Marqueur crucial
         updated_at: new Date().toISOString(),
@@ -2432,10 +2512,10 @@ import {
       { id: 'waiting', label: 'En attendant (Bus, RDV)', icon: Clock },
     ],
     'Pornographie': [
-      { id: 'binge_watch', label: 'Sessions longues (+2h)', icon: Hourglass },
-      { id: 'spending', label: 'DÃ©penses financiÃ¨res', icon: CreditCard },
-      { id: 'risk', label: 'Prise de risque (Public)', icon: AlertTriangle },
-      { id: 'insomnia_p', label: 'Pour rÃ©ussir Ã  dormir', icon: Moon },
+      { id: 'binge_watch', label: 'Sessions rÃ©pÃ©tÃ©es', icon: Hourglass },
+      { id: 'spending', label: 'Achat de contenu /abonnements', icon: CreditCard },
+      { id: 'risk', label: 'Exhibitionnisme (Public)', icon: AlertTriangle },
+      { id: 'insomnia_p', label: 'DÃ©tente pour rÃ©ussir Ã  dormir', icon: Moon },
     ],
     'Ã‰crans / RÃ©seaux': [
       { id: 'doomscrolling', label: 'Scroll infini', icon: Smartphone },
@@ -2446,8 +2526,8 @@ import {
     'Nourriture': [
       { id: 'binge_eating', label: 'Hyperphagie (Gaver)', icon: Utensils },
       { id: 'sugar', label: 'Addiction au sucre', icon: Cookie },
-      { id: 'night_snack', label: 'Grignotage nocturne', icon: Moon },
-      { id: 'emotional_eat', label: 'Manger ses Ã©motions', icon: Heart },
+      { id: 'night_snack', label: 'Grignotage', icon: Moon },
+      { id: 'emotional_eat', label: 'Boulimie (Emotions)', icon: Heart },
     ],
     'default': [
       { id: 'money', label: 'ProblÃ¨mes financiers', icon: Banknote },
@@ -3210,21 +3290,25 @@ export const onboardingSchema = z.object({
   addictionTypeId: z.string().min(1, "Veuillez choisir une catÃ©gorie"),
   sobrietyStartDate: z.string().min(1, "La date est requise"),
   
-  // âœ… Ã‰tape 2 (Emotionnel) - NOUVEAU
+  // Ã‰tape 2 (Emotionnel)
   emotionalTriggers: z.array(z.string()).optional(),
   
-  // âœ… Ã‰tape 3 (Contexte) - NOUVEAU
+  // Ã‰tape 3 (Contexte)
   contextHabits: z.array(z.string()).optional(),
   
-  // âœ… Ã‰tape 4 (SpÃ©cifique) - NOUVEAU
+  // Ã‰tape 4 (SpÃ©cifique)
   specificBehaviors: z.array(z.string()).optional(),
 
-  // Ã‰tape 5 (Contacts)
+  // âœ… CORRECTION : Le contact SOS devient optionnel
+  // On accepte une chaÃ®ne vide OU un format valide
   emergencyContactPhone: z.string()
-    .min(10, "NumÃ©ro invalide")
-    .optional()
-    .or(z.literal('')), 
-  pastorPhones: z.string().optional(),
+    .refine((val) => val === '' || val === undefined || /^\+?[0-9\s]+$/.test(val), "Format invalide")
+    .refine((val) => val === '' || val === undefined || val.length >= 10, "NumÃ©ro trop court")
+    .optional(),
+    
+  // pastorPhones est un tableau de chaÃ®nes (optionnel)
+  pastorPhones: z.array(z.string()).optional(),
+  
   doctorPhone: z.string().optional(),
 });
 

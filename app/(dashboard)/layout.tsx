@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Calendar, ShieldAlert, User, Menu, X, LogOut } from 'lucide-react';
+import { LayoutDashboard, ShieldAlert, User, Menu, X, LogOut } from 'lucide-react';
 import { signOutAction } from '@/lib/actions/auth-actions';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -12,7 +12,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const navigation = [
     { name: 'Tableau de bord', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Calendrier', href: '/calendar', icon: Calendar },
     { name: 'Ma Progression', href: '/stats', icon: User }, // Placeholder
   ];
 

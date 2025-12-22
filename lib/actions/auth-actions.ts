@@ -165,13 +165,17 @@ export async function forgotPasswordAction(data: ForgotPasswordFormValues): Prom
   const validated = forgotPasswordSchema.safeParse(data);
   if (!validated.success) return { success: false, error: "Email invalide" };
 
+  const origin = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+
+  // ✅ CORRECTION : On redirige vers le callback pour créer la session AVANT d'aller sur la page reset
   const { error } = await supabase.auth.resetPasswordForEmail(validated.data.email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/reset-password`,
+    redirectTo: `${origin}/auth/callback?next=/reset-password`,
   })
 
   if (error) {
     console.error("Reset password error:", error);
-    return { success: false, error: "Impossible d'envoyer l'email." };
+    // On retourne true par sécurité même si erreur (pour ne pas leaker les emails)
+    return { success: true };
   }
 
   return { success: true }
@@ -188,7 +192,20 @@ export async function resetPasswordAction(data: ResetPasswordFormValues): Promis
   })
 
   if (error) {
-    return { success: false, error: error.message }
+    console.error("Update password error:", error.message);
+
+    // 1. Gestion spécifique : Mot de passe identique
+    if (error.message.includes("different from the old password")) {
+      return { success: false, error: "Le nouveau mot de passe doit être différent de l'ancien." };
+    }
+    
+    // 2. Gestion spécifique : Mot de passe trop court (sécurité doublée)
+    if (error.message.includes("password should be at least")) {
+       return { success: false, error: "Le mot de passe est trop court." };
+    }
+
+    // 3. Erreur générique
+    return { success: false, error: "Une erreur est survenue lors de la modification." };
   }
 
   return { success: true }

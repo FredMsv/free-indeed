@@ -232,7 +232,7 @@ export default function OnboardingPage() {
                     {addictions.map((addiction) => (
                       <button
                         key={addiction.id} type="button"
-                        onClick={() => setValue('addictionTypeId', addiction.id, { shouldValidate: true })}
+                        onClick={() => setValue('addictionTypeId', addiction.id)}
                         className={`p-3 rounded-xl border text-left transition-all ${selectedAddictionId === addiction.id ? 'border-gold bg-gold/5 ring-1 ring-gold/20' : 'border-gray-200 hover:bg-gray-50'}`}
                       >
                         <span className="text-2xl block mb-1">{addiction.icon}</span>

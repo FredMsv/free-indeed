@@ -66,6 +66,27 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_pledges: {
+        Row: {
+          created_at: string | null
+          id: string
+          pledge_date: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          pledge_date?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          pledge_date?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       relapses: {
         Row: {
           created_at: string | null
@@ -142,51 +163,72 @@ export type Database = {
       user_profiles: {
         Row: {
           addiction_type_id: string | null
+          birth_date: string | null
           can_change_addiction_after: string | null
           created_at: string | null
           doctor_phone: string | null
+          email: string | null
           emergency_contact_phone: string | null
+          first_name: string | null
+          gender: string | null
           habits: Json | null
           id: string
           is_onboarded: boolean | null
+          last_name: string | null
           pastor_phone: string | null
           pastor_phones: string[] | null
+          phone_number: string | null
           sobriety_days_at_change: number | null
           sobriety_start_date: string | null
           updated_at: string | null
           user_id: string | null
+          username: string | null
         }
         Insert: {
           addiction_type_id?: string | null
+          birth_date?: string | null
           can_change_addiction_after?: string | null
           created_at?: string | null
           doctor_phone?: string | null
+          email?: string | null
           emergency_contact_phone?: string | null
+          first_name?: string | null
+          gender?: string | null
           habits?: Json | null
           id?: string
           is_onboarded?: boolean | null
+          last_name?: string | null
           pastor_phone?: string | null
           pastor_phones?: string[] | null
+          phone_number?: string | null
           sobriety_days_at_change?: number | null
           sobriety_start_date?: string | null
           updated_at?: string | null
           user_id?: string | null
+          username?: string | null
         }
         Update: {
           addiction_type_id?: string | null
+          birth_date?: string | null
           can_change_addiction_after?: string | null
           created_at?: string | null
           doctor_phone?: string | null
+          email?: string | null
           emergency_contact_phone?: string | null
+          first_name?: string | null
+          gender?: string | null
           habits?: Json | null
           id?: string
           is_onboarded?: boolean | null
+          last_name?: string | null
           pastor_phone?: string | null
           pastor_phones?: string[] | null
+          phone_number?: string | null
           sobriety_days_at_change?: number | null
           sobriety_start_date?: string | null
           updated_at?: string | null
           user_id?: string | null
+          username?: string | null
         }
         Relationships: [
           {
@@ -194,13 +236,6 @@ export type Database = {
             columns: ["addiction_type_id"]
             isOneToOne: false
             referencedRelation: "addiction_types"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "user_profiles_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: true
-            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
