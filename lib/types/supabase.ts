@@ -146,6 +146,7 @@ export type Database = {
           created_at: string | null
           doctor_phone: string | null
           emergency_contact_phone: string | null
+          habits: Json | null
           id: string
           is_onboarded: boolean | null
           pastor_phone: string | null
@@ -161,6 +162,7 @@ export type Database = {
           created_at?: string | null
           doctor_phone?: string | null
           emergency_contact_phone?: string | null
+          habits?: Json | null
           id?: string
           is_onboarded?: boolean | null
           pastor_phone?: string | null
@@ -176,6 +178,7 @@ export type Database = {
           created_at?: string | null
           doctor_phone?: string | null
           emergency_contact_phone?: string | null
+          habits?: Json | null
           id?: string
           is_onboarded?: boolean | null
           pastor_phone?: string | null
@@ -205,9 +208,11 @@ export type Database = {
       users: {
         Row: {
           avatar_url: string | null
+          birth_date: string | null
           created_at: string | null
           email: string | null
           first_name: string
+          gender: string | null
           id: string
           last_name: string
           phone_number: string
@@ -216,9 +221,11 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          birth_date?: string | null
           created_at?: string | null
           email?: string | null
           first_name: string
+          gender?: string | null
           id: string
           last_name: string
           phone_number: string
@@ -227,9 +234,11 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          birth_date?: string | null
           created_at?: string | null
           email?: string | null
           first_name?: string
+          gender?: string | null
           id?: string
           last_name?: string
           phone_number?: string

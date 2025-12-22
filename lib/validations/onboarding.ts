@@ -1,55 +1,37 @@
-import * as z from 'zod';
-// Assurez-vous d'avoir installé : npm install libphonenumber-js
-import { isValidPhoneNumber } from 'libphonenumber-js';
+import { z } from "zod";
 
-// ✅ ÉTAPE 1 : Addiction et Date
+// Validation étape par étape
 export const step1Schema = z.object({
-  addictionTypeId: z.string().uuid("Veuillez sélectionner un combat"),
-  
-  sobrietyStartDate: z.string()
-    .min(1, "La date est requise")
-    .refine((date) => {
-      const selected = new Date(date);
-      const today = new Date();
-      today.setHours(23, 59, 59, 999);
-      return selected <= today;
-    }, "La date ne peut pas être dans le futur")
-    .refine((date) => {
-      const selected = new Date(date);
-      const oneYearAgo = new Date();
-      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-      return selected >= oneYearAgo;
-    }, "La date ne peut pas remonter à plus d'un an"),
+  addictionTypeId: z.string().min(1, "Veuillez choisir une catégorie"),
+  sobrietyStartDate: z.string().min(1, "La date est requise"),
 });
 
-// ✅ ÉTAPE 2 : Contacts
-export const step2Schema = z.object({
-  pastorPhones: z.string()
-    .optional()
-    .or(z.literal(''))
-    .refine((val) => !val || isValidPhoneNumber(val), {
-      message: "Numéro de téléphone invalide"
-    }),
-    
-  doctorPhone: z.string()
-    .optional()
-    .or(z.literal(''))
-    .refine((val) => !val || isValidPhoneNumber(val), {
-      message: "Numéro de téléphone invalide"
-    }),
-    
-  emergencyContactPhone: z.string()
-    .min(1, "Le contact d'urgence est requis")
-    .refine((val) => isValidPhoneNumber(val || ''), {
-      message: "Numéro de téléphone invalide (format international requis)"
-    }),
-});
-
-// ✅ CORRECTION : Utilisation du spread des shapes au lieu de .merge()
-// Cela évite l'erreur de dépréciation TS(6387) et crée un objet propre
+// Schéma complet
 export const onboardingSchema = z.object({
-  ...step1Schema.shape,
-  ...step2Schema.shape,
+  // Étape 1
+  addictionTypeId: z.string().min(1, "Veuillez choisir une catégorie"),
+  sobrietyStartDate: z.string().min(1, "La date est requise"),
+  
+  // Étape 2 (Emotionnel)
+  emotionalTriggers: z.array(z.string()).optional(),
+  
+  // Étape 3 (Contexte)
+  contextHabits: z.array(z.string()).optional(),
+  
+  // Étape 4 (Spécifique)
+  specificBehaviors: z.array(z.string()).optional(),
+
+  // ✅ CORRECTION : Le contact SOS devient optionnel
+  // On accepte une chaîne vide OU un format valide
+  emergencyContactPhone: z.string()
+    .refine((val) => val === '' || val === undefined || /^\+?[0-9\s]+$/.test(val), "Format invalide")
+    .refine((val) => val === '' || val === undefined || val.length >= 10, "Numéro trop court")
+    .optional(),
+    
+  // pastorPhones est un tableau de chaînes (optionnel)
+  pastorPhones: z.array(z.string()).optional(),
+  
+  doctorPhone: z.string().optional(),
 });
 
 export type OnboardingFormValues = z.infer<typeof onboardingSchema>;

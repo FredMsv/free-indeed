@@ -256,27 +256,71 @@ FICHIER: C:\Users\gegem\free-indeed\app\(auth)\onboarding\page.tsx
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useForm, FieldErrors, useWatch } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { motion, AnimatePresence, PanInfo } from 'framer-motion';
-import { ChevronRight, ChevronLeft, Save, HeartPulse, Loader2 } from 'lucide-react';
-import { onboardingSchema, step1Schema, type OnboardingFormValues } from '@/lib/validations/onboarding';
-import { completeOnboardingAction } from '@/lib/actions/onboarding-actions';
-import { createClient } from '@/lib/supabase/client'; // VÃ©rifiez ce chemin (voir note plus bas)
+import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronRight, ChevronLeft, Save, Check, Loader2, LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
-// âœ… IMPORT NOMMÃ‰ (StandardisÃ© avec votre projet)
+import { onboardingSchema, type OnboardingFormValues } from '@/lib/validations/onboarding';
+import { completeOnboardingAction } from '@/lib/actions/onboarding-actions';
+import { createClient } from '@/lib/supabase/client';
+import { EMOTIONAL_TRIGGERS, CONTEXT_HABITS, SPECIFIC_BEHAVIORS } from '@/lib/constants/habits';
+
 import { Button } from '@/components/ui/Button';
 import PhoneInput from '@/components/ui/PhoneInput';
 import CustomDatePicker from '@/components/ui/CustomDatePicker';
 
-// DÃ©finition propre du type Addiction pour Ã©viter les 'any'
-type AddictionType = {
-  id: string;
-  name?: string;  // Supabase field often 'name'
-  label?: string; // Fallback
-  icon?: string;
-};
+// --- COMPOSANT CARD ---
+const SelectionCard = ({ 
+  label, 
+  icon: Icon, 
+  selected, 
+  onClick 
+}: { 
+  // Note: On retire 'id' des props requises ici car on ne l'utilise pas dans le rendu visuel de la card
+  // Cela simplifie l'appel du composant
+  id?: string, 
+  label: string, 
+  icon?: LucideIcon, 
+  selected: boolean, 
+  onClick: () => void 
+}) => (
+  <div
+    onClick={onClick}
+    className={`
+      cursor-pointer p-4 rounded-xl border flex items-center gap-4 transition-all duration-200 group
+      ${selected 
+        ? 'border-gold bg-gold/5 ring-1 ring-gold/20' 
+        : 'border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50'}
+    `}
+  >
+    {Icon && (
+      <div className={`
+        p-2 rounded-lg transition-colors
+        ${selected ? 'bg-gold/20 text-gold' : 'bg-gray-100 text-gray-500 group-hover:text-gray-700'}
+      `}>
+        <Icon size={20} strokeWidth={2} />
+      </div>
+    )}
+    
+    <span className={`flex-1 text-sm font-medium ${selected ? 'text-gray-900' : 'text-gray-600'}`}>
+      {label}
+    </span>
+    
+    {selected && (
+      <div className="text-gold animate-in zoom-in spin-in-90 duration-300">
+        <Check size={18} strokeWidth={3} />
+      </div>
+    )}
+  </div>
+);
+
+// Correction Type : icon peut Ãªtre null venant de la BDD
+type AddictionType = { id: string; name: string; icon: string | null; };
+
+// Type pour les champs qui sont des tableaux (pour le helper toggle)
+type MultiSelectField = 'emotionalTriggers' | 'contextHabits' | 'specificBehaviors';
 
 export default function OnboardingPage() {
   const [step, setStep] = useState(1);
@@ -284,8 +328,8 @@ export default function OnboardingPage() {
   const [serverError, setServerError] = useState<string | null>(null);
   const router = useRouter();
 
-  // âœ… TYPAGE STRICT
   const [addictions, setAddictions] = useState<AddictionType[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [isLoadingAddictions, setIsLoadingAddictions] = useState(true);
 
   const today = new Date();
@@ -295,9 +339,10 @@ export default function OnboardingPage() {
   const {
     handleSubmit,
     setValue,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     getValues,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     setError,
-    clearErrors,
     control,
     formState: { errors, isSubmitting }
   } = useForm<OnboardingFormValues>({
@@ -306,83 +351,61 @@ export default function OnboardingPage() {
     defaultValues: {
       addictionTypeId: '',
       sobrietyStartDate: '',
+      emotionalTriggers: [],
+      contextHabits: [],
+      specificBehaviors: [],
       emergencyContactPhone: '',
       pastorPhones: '',
       doctorPhone: ''
     }
   });
 
+  // Watchers avec Casting explicite pour Ã©viter les erreurs "includes does not exist"
+  const selectedAddictionId = useWatch({ control, name: 'addictionTypeId' });
+  const sobrietyDate = useWatch({ control, name: 'sobrietyStartDate' });
+  
+  const emotionalTriggers = (useWatch({ control, name: 'emotionalTriggers' }) || []) as string[];
+  const contextHabits = (useWatch({ control, name: 'contextHabits' }) || []) as string[];
+  const specificBehaviors = (useWatch({ control, name: 'specificBehaviors' }) || []) as string[];
+
   const emergencyPhoneValue = useWatch({ control, name: 'emergencyContactPhone' });
   const pastorPhoneValue = useWatch({ control, name: 'pastorPhones' });
   const doctorPhoneValue = useWatch({ control, name: 'doctorPhone' });
 
-  const [selectedAddictionId, setSelectedAddictionId] = useState<string>(getValues('addictionTypeId') || '');
-  const [sobrietyDate, setSobrietyDate] = useState<string>(getValues('sobrietyStartDate') || '');
-
-  // âœ… FETCH DES DONNÃ‰ES
+  // 1. Fetch Addictions
   useEffect(() => {
     async function fetchAddictions() {
-      try {
-        const supabase = createClient();
-        const { data, error } = await supabase
-          .from('addiction_types')
-          .select('*')
-          .order('name'); 
-        
-        if (error) {
-          console.error('Erreur fetch addictions:', error);
-          toast.error("Impossible de charger les types d'addictions");
-        } else {
-          setAddictions(data || []);
-        }
-      } catch (err) {
-        console.error("Erreur inattendue:", err);
-      } finally {
-        setIsLoadingAddictions(false);
+      const supabase = createClient();
+      const { data } = await supabase.from('addiction_types').select('id, name, icon').order('name');
+      if (data) {
+        setAddictions(data);
       }
+      setIsLoadingAddictions(false);
     }
     fetchAddictions();
   }, []);
 
-  const handleAddictionSelect = (id: string) => {
-    setSelectedAddictionId(id);
-    setValue('addictionTypeId', id);
-    if (errors.addictionTypeId) clearErrors('addictionTypeId');
-  };
-
-  const handleDateChange = (date: string) => {
-    setSobrietyDate(date);
-    setValue('sobrietyStartDate', date);
-    if (errors.sobrietyStartDate) clearErrors('sobrietyStartDate');
+  // Helper TypÃ© Correctement
+  const toggleSelection = (field: MultiSelectField, currentArray: string[], value: string) => {
+    const newArray = currentArray.includes(value)
+      ? currentArray.filter(item => item !== value)
+      : [...currentArray, value];
+    
+    setValue(field, newArray, { shouldValidate: true });
   };
 
   const handleNext = () => {
-    const values = getValues();
-    const result = step1Schema.safeParse(values);
-
-    if (result.success) {
-      setServerError(null);
-      setDirection(1);
-      setStep(2);
-    } else {
-      result.error.issues.forEach((issue) => {
-        const path = issue.path[0] as keyof OnboardingFormValues;
-        setError(path, { message: issue.message });
-      });
+    if (step === 1 && (!selectedAddictionId || !sobrietyDate)) {
+      toast.error("Veuillez remplir les champs obligatoires");
+      return;
     }
+    setDirection(1);
+    setStep(s => s + 1);
   };
 
   const handleBack = () => {
     setDirection(-1);
-    setStep(1);
-  };
-
-  const handleDragEnd = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    if (info.offset.x < -50 && step === 1) {
-      handleNext();
-    } else if (info.offset.x > 50 && step === 2) {
-      handleBack();
-    }
+    setStep(s => s - 1);
   };
 
   const onSubmit = async (data: OnboardingFormValues) => {
@@ -390,204 +413,160 @@ export default function OnboardingPage() {
     const result = await completeOnboardingAction(data);
     if (result?.error) {
       setServerError(result.error);
+      toast.error(result.error);
     } else {
+      toast.success("Profil configurÃ© !");
+      router.refresh();
       router.push('/dashboard');
     }
   };
 
-  const onInvalid = (errors: FieldErrors<OnboardingFormValues>) => {
-    console.error("Erreurs de validation :", errors);
-  };
+  const selectedAddictionName = addictions.find(a => a.id === selectedAddictionId)?.name || 'default';
+  const specificOptions = SPECIFIC_BEHAVIORS[selectedAddictionName] || SPECIFIC_BEHAVIORS['default'];
 
+  // Correction Transition : Utilisation de "as const" pour le typage strict Framer Motion
   const variants = {
-    enter: (direction: number) => ({ x: direction > 0 ? "100%" : "-100%", opacity: 0, scale: 0.95 }),
-    center: { zIndex: 1, x: 0, opacity: 1, scale: 1 },
-    exit: (direction: number) => ({ zIndex: 0, x: direction < 0 ? "100%" : "-100%", opacity: 0, scale: 0.95 })
+    enter: (direction: number) => ({ x: direction > 0 ? "100%" : "-100%", opacity: 0 }),
+    center: { x: 0, opacity: 1 },
+    exit: (direction: number) => ({ x: direction < 0 ? "100%" : "-100%", opacity: 0 })
   };
-
-  const transition = { x: { type: "tween", ease: "easeInOut", duration: 0.4 }, opacity: { duration: 0.3 } } as const;
+  const transition = { type: "spring", bounce: 0, duration: 0.35 } as const;
 
   return (
-    <div className="min-h-screen bg-gray-bg flex flex-col justify-center p-4 sm:p-6">
-      <div className="max-w-xl w-full mx-auto bg-white p-6 sm:p-8 rounded-3xl shadow-xl border border-white/50 relative">
+    <div className="min-h-screen bg-gray-bg flex flex-col justify-center p-4 sm:p-6 overflow-hidden">
+      <div className="max-w-xl w-full mx-auto bg-white p-6 sm:p-8 rounded-3xl shadow-xl border border-white/50 relative flex flex-col h-[700px]">
         
         {/* Progress Bar */}
-        <div className="flex gap-2 mb-8">
-          <div className={`h-1.5 flex-1 rounded-full transition-colors duration-500 ${step >= 1 ? 'bg-gold' : 'bg-gray-100'}`} />
-          <div className={`h-1.5 flex-1 rounded-full transition-colors duration-500 ${step >= 2 ? 'bg-gold' : 'bg-gray-100'}`} />
+        <div className="flex gap-1.5 mb-6">
+          {[1, 2, 3, 4, 5].map((s) => (
+            <div key={s} className={`h-1.5 flex-1 rounded-full transition-colors duration-500 ${step >= s ? 'bg-gold' : 'bg-gray-100'}`} />
+          ))}
         </div>
 
-        <h1 className="text-3xl font-bold text-gray-900 mb-2 font-sans">
-          {step === 1 ? "Votre combat" : "Vos soutiens"}
-        </h1>
-        <p className="text-gray-500 mb-8">
-          {step === 1 ? "DÃ©finissons ensemble votre point de dÃ©part." : "Vous n'Ãªtes pas seul. Entourez-vous."}
-        </p>
+        {/* Titres dynamiques */}
+        <div className="mb-6">
+            <h1 className="text-2xl font-bold text-gray-900 font-sans">
+            {step === 1 && "Votre combat"}
+            {step === 2 && "Vos dÃ©clencheurs"}
+            {step === 3 && "Vos contextes"}
+            {step === 4 && "Vos habitudes"}
+            {step === 5 && "Vos soutiens"}
+            </h1>
+            <p className="text-gray-500 text-sm">
+            {step === 1 && "DÃ©finissons votre point de dÃ©part."}
+            {step === 2 && "Quelles Ã©motions provoquent l'envie ?"}
+            {step === 3 && "Quand et oÃ¹ Ãªtes-vous le plus vulnÃ©rable ?"}
+            {step === 4 && "Quels comportements adoptez-vous ?"}
+            {step === 5 && "En cas d'urgence, qui appeler ?"}
+            </p>
 
-        {serverError && (
-          <div className="bg-error/10 text-error p-3 rounded-xl mb-6 text-sm font-medium animate-in slide-in-from-top-2">
-            {serverError}
-          </div>
-        )}
+            {serverError && (
+              <div className="mt-2 text-xs text-error font-medium">{serverError}</div>
+            )}
+        </div>
 
-        <form onSubmit={handleSubmit(onSubmit, onInvalid)} className="relative overflow-x-hidden min-h-[600px]">
+        <form onSubmit={handleSubmit(onSubmit)} className="flex-1 flex flex-col relative overflow-hidden">
           <AnimatePresence initial={false} custom={direction} mode="wait">
             
-            {/* --- Ã‰TAPE 1 --- */}
+            {/* STEP 1: Addiction & Date */}
             {step === 1 && (
-              <motion.div
-                key="step1"
-                custom={direction}
-                variants={variants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={transition}
-                drag="x"
-                dragConstraints={{ left: 0, right: 0 }}
-                onDragEnd={handleDragEnd}
-                className="space-y-8 absolute w-full pb-8"
-              >
-                <div className="space-y-3">
-                  <label className="text-sm font-medium text-gray-text ml-1">Ce dont je me libÃ¨re</label>
-                  
-                  {isLoadingAddictions ? (
-                    <div className="grid grid-cols-2 gap-3">
-                        {[1, 2, 3, 4].map((i) => (
-                            <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />
-                        ))}
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-3">
-                        {addictions.length > 0 ? (
-                            addictions.map((addiction) => (
-                            <button
-                                key={addiction.id}
-                                type="button"
-                                onClick={() => handleAddictionSelect(addiction.id)}
-                                className={`
-                                p-4 rounded-xl border text-left transition-all duration-200
-                                ${selectedAddictionId === addiction.id 
-                                    ? 'border-gold bg-gold/5 ring-1 ring-gold/20' 
-                                    : 'border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50'}
-                                `}
-                            >
-                                <span className="text-2xl mb-2 block">{addiction.icon || 'ðŸŽ¯'}</span>
-                                {/* âœ… CORRECTION 'ANY' : Utilisation du type sÃ©curisÃ© */}
-                                <span className={`text-sm font-medium ${selectedAddictionId === addiction.id ? 'text-gray-900' : 'text-gray-600'}`}>
-                                  {addiction.name || addiction.label || 'Inconnu'}
-                                </span>
-                            </button>
-                            ))
-                        ) : (
-                            <div className="col-span-2 text-center text-sm text-gray-500 py-4 bg-gray-50 rounded-xl">
-                                Aucune catÃ©gorie trouvÃ©e.
-                            </div>
-                        )}
-                    </div>
-                  )}
-                  {errors.addictionTypeId && <p className="text-xs text-error ml-1">{errors.addictionTypeId.message}</p>}
-                </div>
-
-                <div className="relative z-50">
-                    <CustomDatePicker
-                    label="Date de dÃ©but de sobriÃ©tÃ©"
-                    value={sobrietyDate}
-                    onChange={handleDateChange}
-                    error={errors.sobrietyStartDate?.message}
-                    minDate={oneYearAgo}
-                    maxDate={today}
-                    />
-                </div>
-
-                {/* âœ… CORRECTION BUTTON : Syntaxe standard (Children) */}
-                <Button 
-                  type="button"
-                  onClick={handleNext} 
-                  className="w-full"
-                >
-                  Continuer <ChevronRight className="ml-2 h-4 w-4" />
-                </Button>
+              <motion.div key="step1" custom={direction} variants={variants} initial="enter" animate="center" exit="exit" transition={transition} className="space-y-6 absolute w-full h-full overflow-y-auto pb-20">
+                 <div className="grid grid-cols-2 gap-3">
+                    {addictions.map((addiction) => (
+                      <button
+                        key={addiction.id} type="button"
+                        onClick={() => setValue('addictionTypeId', addiction.id, { shouldValidate: true })}
+                        className={`p-3 rounded-xl border text-left transition-all ${selectedAddictionId === addiction.id ? 'border-gold bg-gold/5 ring-1 ring-gold/20' : 'border-gray-200 hover:bg-gray-50'}`}
+                      >
+                        <span className="text-2xl block mb-1">{addiction.icon}</span>
+                        <span className="text-sm font-medium">{addiction.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <CustomDatePicker label="Date de dÃ©but" value={sobrietyDate} onChange={(d) => setValue('sobrietyStartDate', d)} minDate={oneYearAgo} maxDate={today} />
               </motion.div>
             )}
 
-            {/* --- Ã‰TAPE 2 --- */}
+            {/* STEP 2: Emotionnel */}
             {step === 2 && (
-              <motion.div
-                key="step2"
-                custom={direction}
-                variants={variants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={transition}
-                drag="x"
-                dragConstraints={{ left: 0, right: 0 }}
-                onDragEnd={handleDragEnd}
-                className="space-y-6 absolute w-full pb-8"
-              >
-                <div className="bg-red-50 p-4 rounded-xl border border-red-100 space-y-4">
-                  <div className="flex items-center gap-2 text-red-800 font-medium mb-2">
-                    <HeartPulse size={18} />
-                    Contact d`&apos;Urgence (SOS)
-                  </div>
-                  
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-gray-text ml-1">NumÃ©ro de tÃ©lÃ©phone</label>
-                    <PhoneInput 
-                      value={emergencyPhoneValue || ''}
-                      onChange={(val) => setValue('emergencyContactPhone', val, { shouldValidate: true })}
-                      error={errors.emergencyContactPhone?.message}
-                    />
-                  </div>
-                </div>
+              <motion.div key="step2" custom={direction} variants={variants} initial="enter" animate="center" exit="exit" transition={transition} className="space-y-3 absolute w-full h-full overflow-y-auto pb-20">
+                {EMOTIONAL_TRIGGERS.map((item) => (
+                  <SelectionCard 
+                    key={item.id} 
+                    {...item} 
+                    selected={emotionalTriggers.includes(item.id)} 
+                    onClick={() => toggleSelection('emotionalTriggers', emotionalTriggers, item.id)} 
+                  />
+                ))}
+              </motion.div>
+            )}
 
+            {/* STEP 3: Contexte */}
+            {step === 3 && (
+              <motion.div key="step3" custom={direction} variants={variants} initial="enter" animate="center" exit="exit" transition={transition} className="space-y-3 absolute w-full h-full overflow-y-auto pb-20">
+                {CONTEXT_HABITS.map((item) => (
+                  <SelectionCard 
+                    key={item.id} 
+                    {...item} 
+                    selected={contextHabits.includes(item.id)} 
+                    onClick={() => toggleSelection('contextHabits', contextHabits, item.id)} 
+                  />
+                ))}
+              </motion.div>
+            )}
+
+            {/* STEP 4: SpÃ©cifique */}
+            {step === 4 && (
+              <motion.div key="step4" custom={direction} variants={variants} initial="enter" animate="center" exit="exit" transition={transition} className="space-y-3 absolute w-full h-full overflow-y-auto pb-20">
+                {specificOptions.map((item) => (
+                  <SelectionCard 
+                    key={item.id}
+                    id={item.id} // âœ… Correction: Passage explicite de l'ID manquant
+                    label={item.label} 
+                    icon={item.icon}
+                    selected={specificBehaviors.includes(item.id)} 
+                    onClick={() => toggleSelection('specificBehaviors', specificBehaviors, item.id)} 
+                  />
+                ))}
+              </motion.div>
+            )}
+
+            {/* STEP 5: Contacts */}
+            {step === 5 && (
+              <motion.div key="step5" custom={direction} variants={variants} initial="enter" animate="center" exit="exit" transition={transition} className="space-y-6 absolute w-full h-full overflow-y-auto pb-20">
+                <div className="bg-red-50 p-4 rounded-xl border border-red-100">
+                    <label className="text-sm font-medium text-red-800 block mb-2">Contact SOS (Obligatoire)</label>
+                    <PhoneInput value={emergencyPhoneValue || ''} onChange={(v) => setValue('emergencyContactPhone', v)} error={errors.emergencyContactPhone?.message} />
+                </div>
                 <div className="space-y-4">
-                  <h3 className="text-sm font-medium text-gray-900 ml-1">Soutiens spirituels & mÃ©dicaux (Optionnel)</h3>
-                  
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-gray-500 ml-1">Pasteur / Mentor</label>
-                    <PhoneInput 
-                      value={pastorPhoneValue || ''}
-                      onChange={(val) => setValue('pastorPhones', val)}
-                      error={errors.pastorPhones?.message}
-                    />
-                  </div>
-                  
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-gray-500 ml-1">MÃ©decin</label>
-                    <PhoneInput 
-                      value={doctorPhoneValue || ''}
-                      onChange={(val) => setValue('doctorPhone', val)}
-                      error={errors.doctorPhone?.message}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  {/* âœ… CORRECTION BUTTON : Syntaxe standard */}
-                  <Button 
-                    type="button" 
-                    variant="secondary"
-                    onClick={handleBack} 
-                    className="flex-1"
-                  >
-                    <ChevronLeft className="mr-2 h-4 w-4" /> Retour
-                  </Button>
-                  
-                  <Button 
-                    type="submit" 
-                    disabled={isSubmitting} 
-                    className="flex-[2]"
-                  >
-                    {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Terminer <Save className="ml-2 h-4 w-4" />
-                  </Button>
+                    <label className="text-sm font-medium text-gray-700 block">Autres soutiens (Optionnel)</label>
+                    <PhoneInput value={pastorPhoneValue || ''} onChange={(v) => setValue('pastorPhones', v)} />
+                    <PhoneInput value={doctorPhoneValue || ''} onChange={(v) => setValue('doctorPhone', v)} />
                 </div>
               </motion.div>
             )}
 
           </AnimatePresence>
+
+          {/* Navigation Buttons */}
+          <div className="absolute bottom-0 left-0 right-0 bg-white pt-4 border-t border-gray-100 flex gap-3">
+            {step > 1 && (
+                <Button type="button" variant="secondary" onClick={handleBack} className="flex-1">
+                    <ChevronLeft className="mr-2 h-4 w-4" /> Retour
+                </Button>
+            )}
+            {step < 5 ? (
+                <Button type="button" onClick={handleNext} className="flex-[2]">
+                    Continuer <ChevronRight className="ml-2 h-4 w-4" />
+                </Button>
+            ) : (
+                <Button type="submit" disabled={isSubmitting} className="flex-[2]">
+                    {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Terminer <Save className="ml-2 h-4 w-4" />
+                </Button>
+            )}
+          </div>
+
         </form>
       </div>
     </div>
@@ -777,12 +756,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Mail, User, Lock, UserPlus, Loader2, AlertCircle } from 'lucide-react';
+import { Mail, User, Lock, UserPlus, Loader2, AlertCircle, Calendar, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { signUpAction } from '@/lib/actions/auth-actions';
 import { signUpSchema, type SignUpFormValues } from '@/lib/validations/auth';
 import { mapAuthError } from '@/lib/errors/mapping';
+
 import { Button } from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import PhoneInput from '@/components/ui/PhoneInput';
@@ -809,31 +789,24 @@ export default function SignUpPage() {
       password: '',
       firstName: '',
       lastName: '',
-      phoneNumber: ''
+      phoneNumber: '',
+      birthDate: '',
+      // âœ… Initialisation "neutre" compatible avec z.union
+      gender: undefined as unknown as SignUpFormValues["gender"]
     }
   });
 
-  const passwordValue = useWatch({ 
-    control, 
-    name: 'password', 
-    defaultValue: ''
-  });
-
-  const phoneNumberValue = useWatch({ 
-    control, 
-    name: 'phoneNumber',
-    defaultValue: '' 
-  });
+  const passwordValue = useWatch({ control, name: 'password' });
+  const phoneNumberValue = useWatch({ control, name: 'phoneNumber' });
+  const genderValue = useWatch({ control, name: 'gender' });
 
   const onSubmit = (data: SignUpFormValues) => {
     setServerError(null);
-    
     startTransition(async () => {
       try {
         const result = await signUpAction(data);
         
         if (!result.success) {
-          // Gestion des erreurs de champs spÃ©cifiques
           if (result.fieldErrors) {
             Object.entries(result.fieldErrors).forEach(([field, message]) => {
               setError(field as keyof SignUpFormValues, {
@@ -845,14 +818,12 @@ export default function SignUpPage() {
             return;
           }
 
-          // Gestion de l'erreur globale traduite
           const mappedError = mapAuthError(new Error(result.error));
           setServerError(mappedError);
           toast.error(mappedError);
           return;
         }
 
-        // SuccÃ¨s
         toast.success("Compte crÃ©Ã© avec succÃ¨s !");
         if (result.redirectTo) {
           router.push(result.redirectTo);
@@ -907,10 +878,49 @@ export default function SignUpPage() {
           />
 
           <PhoneInput 
-            value={phoneNumberValue}
+            value={phoneNumberValue || ''}
             onChange={(val) => setValue('phoneNumber', val)}
             error={errors.phoneNumber?.message}
           />
+
+          {/* --- GENRE (Select) --- */}
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-gray-text ml-1">Genre</label>
+            <div className="relative">
+              <select
+                {...register('gender')}
+                className={`
+                  w-full bg-white border rounded-xl px-4 py-3 outline-none appearance-none transition-all cursor-pointer
+                  ${errors.gender 
+                    ? 'border-error ring-1 ring-error/20' 
+                    : 'border-gray-border focus:border-gold focus:ring-2 focus:ring-gold/10'
+                  }
+                  ${!genderValue ? 'text-gray-400' : 'text-gray-900'}
+                `}
+                defaultValue=""
+              >
+                <option value="" disabled>SÃ©lectionner</option>
+                <option value="male">Homme</option>
+                <option value="female">Femme</option>
+              </select>
+              
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                <ChevronDown size={18} />
+              </div>
+            </div>
+            {errors.gender && <p className="text-xs text-error ml-1">{errors.gender.message}</p>}
+          </div>
+
+          {/* --- DATE DE NAISSANCE --- */}
+          <div>
+            <Input 
+              type="date"
+              label="Date de naissance" 
+              icon={Calendar} 
+              {...register('birthDate')} 
+              error={errors.birthDate?.message}
+            />
+          </div>
           
           <div className="md:col-span-2">
             <Input 
@@ -1050,7 +1060,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { LayoutDashboard, Calendar, ShieldAlert, User, Menu, X, LogOut } from 'lucide-react';
-import Button from '@/components/ui/Button';
+import { signOutAction } from '@/lib/actions/auth-actions';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -1073,7 +1083,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         />
       )}
 
-      {/* sidebar */}
+      {/* Sidebar */}
       <aside className={`
         fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 transform transition-transform duration-200 ease-in-out
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
@@ -1115,7 +1125,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </div>
             </Link>
             
-            <button className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-400 hover:text-gray-600 w-full transition-colors">
+            <button 
+              onClick={() => signOutAction()}
+              className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-400 hover:text-gray-600 w-full transition-colors"
+            >
               <LogOut size={20} />
               DÃ©connexion
             </button>
@@ -2088,7 +2101,8 @@ FICHIER: C:\Users\gegem\free-indeed\lib\actions\auth-actions.ts
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { signUpSchema, signInSchema, type SignUpFormValues, type SignInFormValues } from '@/lib/validations/auth'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { signUpSchema, signInSchema, forgotPasswordSchema, resetPasswordSchema, type SignUpFormValues, type SignInFormValues, type ForgotPasswordFormValues, type ResetPasswordFormValues } from '@/lib/validations/auth'
 import { redirect } from 'next/navigation'
 
 export type ActionResponse = {
@@ -2098,59 +2112,125 @@ export type ActionResponse = {
   redirectTo?: string
 }
 
-export async function signUpAction(data: SignUpFormValues): Promise<ActionResponse> {
-  const supabase = await createClient()
+export type AuthResponse = {
+  success: boolean;
+  error?: string;
+  fieldErrors?: Record<string, string>;
+  redirectTo?: string;
+};
 
-  // 1. Validation des donnÃ©es
-  const validatedFields = signUpSchema.safeParse(data)
-  if (!validatedFields.success) {
+export async function signUpAction(data: SignUpFormValues): Promise<AuthResponse> {
+  // 1. Validation Zod des entrÃ©es
+  const validated = signUpSchema.safeParse(data);
+  if (!validated.success) {
     return {
       success: false,
       error: "DonnÃ©es invalides",
-      fieldErrors: validatedFields.error.flatten().fieldErrors as Record<string, string>
-    }
+      fieldErrors: validated.error.flatten().fieldErrors as Record<string, string>,
+    };
   }
 
-  const { email, password, username, firstName, lastName, phoneNumber } = validatedFields.data
+  const { email, password, username, firstName, lastName, phoneNumber, gender, birthDate } = validated.data;
 
-  // 2. VÃ©rification d'unicitÃ© (Pseudo/Email) via RPC ou Query simple
-  // On vÃ©rifie d'abord le pseudo car Auth gÃ¨re l'email
-  const { data: existingUser } = await supabase
-    .from('users')
-    .select('username')
-    .eq('username', username)
-    .single()
+  // Normalisation basique du tÃ©lÃ©phone pour la recherche (suppression des espaces)
+  // IdÃ©alement, utilisez libphonenumber-js pour un formatage E.164 parfait (+33...)
+  const normalizedPhoneSearch = phoneNumber?.replace(/\s/g, ''); 
+
+  // -------------------------------------------------------------------------
+  // ðŸ›¡ï¸ VÃ‰RIFICATIONS PRÃ‰ALABLES
+  // -------------------------------------------------------------------------
+  
+  const supabaseAdmin = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    }
+  );
+
+  // A. VÃ©rifier le PSEUDO
+  const { data: existingUser } = await supabaseAdmin
+    .from("user_profiles")
+    .select("username")
+    .ilike("username", username)
+    .maybeSingle();
 
   if (existingUser) {
-    return {
-      success: false,
-      fieldErrors: { username: "Ce pseudo est dÃ©jÃ  utilisÃ©." }
+    return { success: false, fieldErrors: { username: "Ce pseudo est dÃ©jÃ  pris." } };
+  }
+
+  // B. VÃ©rifier l'EMAIL
+  const { data: existingEmail } = await supabaseAdmin
+    .from("user_profiles")
+    .select("email")
+    .eq("email", email)
+    .maybeSingle();
+
+  if (existingEmail) {
+    return { success: false, fieldErrors: { email: "Un compte existe dÃ©jÃ  avec cet email." } };
+  }
+
+  // C. VÃ©rifier le TÃ‰LÃ‰PHONE (Tentative manuelle)
+  if (normalizedPhoneSearch) {
+    // On essaie de chercher le numÃ©ro tel quel OU sans espaces
+    // Note: Cela peut Ã©chouer si le format en base est diffÃ©rent (ex: +33 vs 06)
+    // C'est pourquoi le "Filet de sÃ©curitÃ©" plus bas est crucial.
+    const { data: existingPhone } = await supabaseAdmin
+      .from("user_profiles")
+      .select("phone_number")
+      .eq("phone_number", normalizedPhoneSearch) 
+      .maybeSingle();
+
+    if (existingPhone) {
+      return { success: false, fieldErrors: { phoneNumber: "Ce numÃ©ro de tÃ©lÃ©phone est dÃ©jÃ  utilisÃ©." } };
     }
   }
 
-  // 3. CrÃ©ation du compte Auth
-  // NOTE: Le trigger SQL 'on_auth_user_created' s'occupera de remplir public.users et public.user_profiles
+  // -------------------------------------------------------------------------
+  // ðŸš€ CRÃ‰ATION DU COMPTE
+  // -------------------------------------------------------------------------
+  const supabase = await createClient();
+
   const { error } = await supabase.auth.signUp({
     email,
     password,
     options: {
       data: {
+        username,
         first_name: firstName,
         last_name: lastName,
-        username: username,
-        phone_number: phoneNumber,
+        phone_number: phoneNumber, // On envoie le numÃ©ro tel que saisi (ou normalisÃ© selon vos prÃ©fÃ©rences)
+        gender: gender,
+        birth_date: birthDate,
       },
-      // Important pour rediriger aprÃ¨s confirmation email si activÃ©
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/auth/callback`
     },
-  })
+  });
 
   if (error) {
-    return { success: false, error: error.message }
+    console.error("Erreur Signup Supabase:", error);
+
+    // --- FILET DE SÃ‰CURITÃ‰ ---
+    // Si la vÃ©rification manuelle a Ã©chouÃ© (formatage) mais que Supabase rejette le numÃ©ro :
+    const errorMessage = error.message.toLowerCase();
+    
+    // DÃ©tection des erreurs de duplication (Email ou TÃ©lÃ©phone)
+    if (errorMessage.includes("already registered") || errorMessage.includes("user already exists") || errorMessage.includes("duplicate")) {
+       // Si on est ici, c'est probablement le tÃ©lÃ©phone car l'email a Ã©tÃ© checkÃ© juste avant.
+       // On renvoie une erreur ciblÃ©e sur le champ tÃ©lÃ©phone pour Ã©viter la banniÃ¨re gÃ©nÃ©rique.
+       return { 
+         success: false, 
+         fieldErrors: { phoneNumber: "Ce numÃ©ro (ou cet email) est dÃ©jÃ  associÃ© Ã  un compte." } 
+       };
+    }
+    
+    // Erreur technique rÃ©elle
+    return { success: false, error: error.message };
   }
 
-  // SuccÃ¨s
-  return { success: true, redirectTo: '/signup/success' }
+  return { success: true, redirectTo: "/onboarding" };
 }
 
 export async function signInAction(data: SignInFormValues): Promise<ActionResponse> {
@@ -2169,11 +2249,11 @@ export async function signInAction(data: SignInFormValues): Promise<ActionRespon
   })
 
   if (error) {
-    return { success: false, error: error.message }
+    // AmÃ©lioration UX: Message plus clair pour "Invalid login credentials"
+    return { success: false, error: "Email ou mot de passe incorrect." }
   }
 
-  // La redirection est gÃ©rÃ©e cÃ´tÃ© client ou via middleware, mais on peut renvoyer l'URL
-  return { success: true, redirectTo: '/dashboard' } // Le middleware ajustera si onboarding nÃ©cessaire
+  return { success: true, redirectTo: '/dashboard' }
 }
 
 export async function signOutAction() {
@@ -2181,11 +2261,6 @@ export async function signOutAction() {
   await supabase.auth.signOut()
   redirect('/login')
 }
-
-// ... (Code prÃ©cÃ©dent signUpAction, signInAction, signOutAction) ...
-
-// AJOUTS POUR COMPATIBILITÃ‰ ET PHASE 2
-import { forgotPasswordSchema, resetPasswordSchema, type ForgotPasswordFormValues, type ResetPasswordFormValues } from '@/lib/validations/auth'
 
 export async function forgotPasswordAction(data: ForgotPasswordFormValues): Promise<ActionResponse> {
   const supabase = await createClient()
@@ -2197,9 +2272,10 @@ export async function forgotPasswordAction(data: ForgotPasswordFormValues): Prom
     redirectTo: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/reset-password`,
   })
 
-  // SÃ©curitÃ©: on ne dit jamais si l'email n'existe pas
   if (error) {
     console.error("Reset password error:", error);
+    // Optionnel : ne pas retourner l'erreur exacte pour sÃ©curitÃ©, ou si :
+    return { success: false, error: "Impossible d'envoyer l'email." };
   }
 
   return { success: true }
@@ -2301,6 +2377,85 @@ export async function completeOnboardingAction(data: OnboardingFormValues): Prom
     return { success: false, error: "Une erreur interne est survenue." };
   }
 }
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\lib\constants\habits.tsx
+==========================================
+import { 
+    Zap, Hourglass, User, CloudRain, Flame, Trophy, BatteryLow, Moon, 
+    Sun, Utensils, Coffee, Sunset, Calendar, Users, Lock,
+    Wine, EyeOff, UserMinus, Car, Clock, CreditCard, AlertTriangle, 
+    Smartphone, Scale, Gamepad2, Cookie, Heart, Banknote, MessageSquareX, Frown,
+    LucideIcon 
+  } from 'lucide-react';
+  
+  // Type pour nos objets d'habitudes
+  export type HabitOption = {
+    id: string;
+    label: string;
+    icon: LucideIcon; // On stocke le composant directement
+  };
+  
+  export const EMOTIONAL_TRIGGERS: HabitOption[] = [
+    { id: 'stress', label: 'Stress / AnxiÃ©tÃ©', icon: Zap },
+    { id: 'boredom', label: 'Ennui', icon: Hourglass },
+    { id: 'loneliness', label: 'Solitude', icon: User },
+    { id: 'sadness', label: 'Tristesse / DÃ©prime', icon: CloudRain },
+    { id: 'anger', label: 'ColÃ¨re / Frustration', icon: Flame },
+    { id: 'reward', label: 'RÃ©compense / CÃ©lÃ©bration', icon: Trophy },
+    { id: 'fatigue', label: 'Fatigue / Ã‰puisement', icon: BatteryLow },
+    { id: 'insomnia', label: 'Insomnie', icon: Moon },
+  ];
+  
+  export const CONTEXT_HABITS: HabitOption[] = [
+    { id: 'morning', label: 'DÃ¨s le rÃ©veil', icon: Sun },
+    { id: 'meals', label: 'AprÃ¨s les repas', icon: Utensils },
+    { id: 'work_break', label: 'Pauses au travail', icon: Coffee },
+    { id: 'evening', label: 'Le soir (DÃ©tente)', icon: Sunset },
+    { id: 'night', label: 'La nuit (Cachette)', icon: Moon },
+    { id: 'weekend', label: 'Le week-end (Festif)', icon: Calendar },
+    { id: 'social', label: 'En groupe / SoirÃ©e', icon: Users },
+    { id: 'alone', label: 'Seul(e) / IsolÃ©(e)', icon: Lock },
+  ];
+  
+  export const SPECIFIC_BEHAVIORS: Record<string, HabitOption[]> = {
+    'Alcool': [
+      { id: 'binge', label: 'Binge drinking (Vitesse)', icon: Wine },
+      { id: 'blackout', label: 'Jusqu\'au trou noir', icon: EyeOff },
+      { id: 'solo', label: 'Boire seul en cachette', icon: UserMinus },
+      { id: 'morning_drink', label: 'Besoin le matin', icon: Sun },
+    ],
+    'Tabac / Cigarette': [
+      { id: 'coffee', label: 'Avec le cafÃ©', icon: Coffee },
+      { id: 'drive', label: 'En conduisant', icon: Car },
+      { id: 'social_smoke', label: 'Pause collÃ¨gues', icon: Users },
+      { id: 'waiting', label: 'En attendant (Bus, RDV)', icon: Clock },
+    ],
+    'Pornographie': [
+      { id: 'binge_watch', label: 'Sessions longues (+2h)', icon: Hourglass },
+      { id: 'spending', label: 'DÃ©penses financiÃ¨res', icon: CreditCard },
+      { id: 'risk', label: 'Prise de risque (Public)', icon: AlertTriangle },
+      { id: 'insomnia_p', label: 'Pour rÃ©ussir Ã  dormir', icon: Moon },
+    ],
+    'Ã‰crans / RÃ©seaux': [
+      { id: 'doomscrolling', label: 'Scroll infini', icon: Smartphone },
+      { id: 'procrastination', label: 'Procrastination', icon: Clock },
+      { id: 'comparison', label: 'Comparaison sociale', icon: Scale },
+      { id: 'gaming', label: 'Sessions nocturnes', icon: Gamepad2 },
+    ],
+    'Nourriture': [
+      { id: 'binge_eating', label: 'Hyperphagie (Gaver)', icon: Utensils },
+      { id: 'sugar', label: 'Addiction au sucre', icon: Cookie },
+      { id: 'night_snack', label: 'Grignotage nocturne', icon: Moon },
+      { id: 'emotional_eat', label: 'Manger ses Ã©motions', icon: Heart },
+    ],
+    'default': [
+      { id: 'money', label: 'ProblÃ¨mes financiers', icon: Banknote },
+      { id: 'lies', label: 'Mensonges aux proches', icon: MessageSquareX },
+      { id: 'isolation', label: 'Isolement social', icon: UserMinus },
+      { id: 'regret', label: 'CulpabilitÃ© immÃ©diate', icon: Frown },
+    ]
+  };
 
 ==========================================
 FICHIER: C:\Users\gegem\free-indeed\lib\errors\mapping.ts
@@ -2725,6 +2880,7 @@ export type Database = {
           created_at: string | null
           doctor_phone: string | null
           emergency_contact_phone: string | null
+          habits: Json | null
           id: string
           is_onboarded: boolean | null
           pastor_phone: string | null
@@ -2740,6 +2896,7 @@ export type Database = {
           created_at?: string | null
           doctor_phone?: string | null
           emergency_contact_phone?: string | null
+          habits?: Json | null
           id?: string
           is_onboarded?: boolean | null
           pastor_phone?: string | null
@@ -2755,6 +2912,7 @@ export type Database = {
           created_at?: string | null
           doctor_phone?: string | null
           emergency_contact_phone?: string | null
+          habits?: Json | null
           id?: string
           is_onboarded?: boolean | null
           pastor_phone?: string | null
@@ -2784,9 +2942,11 @@ export type Database = {
       users: {
         Row: {
           avatar_url: string | null
+          birth_date: string | null
           created_at: string | null
           email: string | null
           first_name: string
+          gender: string | null
           id: string
           last_name: string
           phone_number: string
@@ -2795,9 +2955,11 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          birth_date?: string | null
           created_at?: string | null
           email?: string | null
           first_name: string
+          gender?: string | null
           id: string
           last_name: string
           phone_number: string
@@ -2806,9 +2968,11 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          birth_date?: string | null
           created_at?: string | null
           email?: string | null
           first_name?: string
+          gender?: string | null
           id?: string
           last_name?: string
           phone_number?: string
@@ -2972,20 +3136,35 @@ FICHIER: C:\Users\gegem\free-indeed\lib\validations\auth.ts
 ==========================================
 import { z } from "zod";
 
+// --- SCHEMA INSCRIPTION (SIGN UP) ---
 export const signUpSchema = z.object({
   firstName: z.string().min(2, "Le prÃ©nom doit contenir au moins 2 caractÃ¨res"),
   lastName: z.string().min(2, "Le nom doit contenir au moins 2 caractÃ¨res"),
   username: z
     .string()
     .min(3, "Le pseudo doit contenir au moins 3 caractÃ¨res")
-    .regex(/^[a-zA-Z0-9_]+$/, "Le pseudo ne doit contenir que des lettres, chiffres et underscores"),
+    .regex(/^[a-zA-Z0-9_]+$/, "Lettres, chiffres et underscores uniquement"),
   email: z.string().email({ message: "Format email invalide" }),
   phoneNumber: z.string().optional(),
+
+  // âœ… CORRECTION : On utilise simplement 'message' comme indiquÃ© par l'erreur TS
+  gender: z.enum(["male", "female"], {
+    message: "Veuillez sÃ©lectionner votre genre"
+  }),
+
+  birthDate: z.string().refine((date) => {
+    if (!date) return false;
+    return new Date(date) < new Date();
+  }, "Date de naissance invalide"),
+
   password: z
     .string()
-    .min(8, "Le mot de passe doit contenir au moins 8 caractÃ¨res"),
+    .min(8, "Le mot de passe doit contenir au moins 8 caractÃ¨res")
+    .regex(/[A-Z]/, "Au moins une majuscule")
+    .regex(/[0-9]/, "Au moins un chiffre"),
 });
 
+// ... (Le reste du fichier ne change pas) ...
 export const signInSchema = z.object({
   email: z.string().email({ message: "Format email invalide" }),
   password: z.string().min(1, "Le mot de passe est requis"),
@@ -3017,58 +3196,36 @@ export type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>;
 ==========================================
 FICHIER: C:\Users\gegem\free-indeed\lib\validations\onboarding.ts
 ==========================================
-import * as z from 'zod';
-// Assurez-vous d'avoir installÃ© : npm install libphonenumber-js
-import { isValidPhoneNumber } from 'libphonenumber-js';
+import { z } from "zod";
 
-// âœ… Ã‰TAPE 1 : Addiction et Date
+// Validation Ã©tape par Ã©tape
 export const step1Schema = z.object({
-  addictionTypeId: z.string().uuid("Veuillez sÃ©lectionner un combat"),
-  
-  sobrietyStartDate: z.string()
-    .min(1, "La date est requise")
-    .refine((date) => {
-      const selected = new Date(date);
-      const today = new Date();
-      today.setHours(23, 59, 59, 999);
-      return selected <= today;
-    }, "La date ne peut pas Ãªtre dans le futur")
-    .refine((date) => {
-      const selected = new Date(date);
-      const oneYearAgo = new Date();
-      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-      return selected >= oneYearAgo;
-    }, "La date ne peut pas remonter Ã  plus d'un an"),
+  addictionTypeId: z.string().min(1, "Veuillez choisir une catÃ©gorie"),
+  sobrietyStartDate: z.string().min(1, "La date est requise"),
 });
 
-// âœ… Ã‰TAPE 2 : Contacts
-export const step2Schema = z.object({
-  pastorPhones: z.string()
-    .optional()
-    .or(z.literal(''))
-    .refine((val) => !val || isValidPhoneNumber(val), {
-      message: "NumÃ©ro de tÃ©lÃ©phone invalide"
-    }),
-    
-  doctorPhone: z.string()
-    .optional()
-    .or(z.literal(''))
-    .refine((val) => !val || isValidPhoneNumber(val), {
-      message: "NumÃ©ro de tÃ©lÃ©phone invalide"
-    }),
-    
-  emergencyContactPhone: z.string()
-    .min(1, "Le contact d'urgence est requis")
-    .refine((val) => isValidPhoneNumber(val || ''), {
-      message: "NumÃ©ro de tÃ©lÃ©phone invalide (format international requis)"
-    }),
-});
-
-// âœ… CORRECTION : Utilisation du spread des shapes au lieu de .merge()
-// Cela Ã©vite l'erreur de dÃ©prÃ©ciation TS(6387) et crÃ©e un objet propre
+// SchÃ©ma complet
 export const onboardingSchema = z.object({
-  ...step1Schema.shape,
-  ...step2Schema.shape,
+  // Ã‰tape 1
+  addictionTypeId: z.string().min(1, "Veuillez choisir une catÃ©gorie"),
+  sobrietyStartDate: z.string().min(1, "La date est requise"),
+  
+  // âœ… Ã‰tape 2 (Emotionnel) - NOUVEAU
+  emotionalTriggers: z.array(z.string()).optional(),
+  
+  // âœ… Ã‰tape 3 (Contexte) - NOUVEAU
+  contextHabits: z.array(z.string()).optional(),
+  
+  // âœ… Ã‰tape 4 (SpÃ©cifique) - NOUVEAU
+  specificBehaviors: z.array(z.string()).optional(),
+
+  // Ã‰tape 5 (Contacts)
+  emergencyContactPhone: z.string()
+    .min(10, "NumÃ©ro invalide")
+    .optional()
+    .or(z.literal('')), 
+  pastorPhones: z.string().optional(),
+  doctorPhone: z.string().optional(),
 });
 
 export type OnboardingFormValues = z.infer<typeof onboardingSchema>;
@@ -3214,6 +3371,87 @@ export interface Database {
   }
   public: {
     Tables: {
+      // âœ… TABLE AJOUTÃ‰E : user_profiles (Essentiel pour votre code)
+      user_profiles: {
+        Row: {
+          id: string
+          user_id: string
+          first_name: string | null
+          last_name: string | null
+          username: string | null
+          email: string | null
+          phone_number: string | null
+          gender: string | null
+          birth_date: string | null
+          avatar_url: string | null
+          
+          // Champs Onboarding
+          addiction_type_id: string | null
+          sobriety_start_date: string | null
+          emergency_contact_phone: string | null
+          pastor_phone: string | null
+          doctor_phone: string | null
+          
+          // âœ… AJOUT : La colonne habits
+          habits: Json | null
+          
+          is_onboarded: boolean
+          created_at: string
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          first_name?: string | null
+          last_name?: string | null
+          username?: string | null
+          email?: string | null
+          phone_number?: string | null
+          gender?: string | null
+          birth_date?: string | null
+          avatar_url?: string | null
+          
+          addiction_type_id?: string | null
+          sobriety_start_date?: string | null
+          emergency_contact_phone?: string | null
+          pastor_phone?: string | null
+          doctor_phone?: string | null
+          
+          // âœ… AJOUT
+          habits?: Json | null
+          
+          is_onboarded?: boolean
+          created_at?: string
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          first_name?: string | null
+          last_name?: string | null
+          username?: string | null
+          email?: string | null
+          phone_number?: string | null
+          gender?: string | null
+          birth_date?: string | null
+          avatar_url?: string | null
+          
+          addiction_type_id?: string | null
+          sobriety_start_date?: string | null
+          emergency_contact_phone?: string | null
+          pastor_phone?: string | null
+          doctor_phone?: string | null
+          
+          // âœ… AJOUT
+          habits?: Json | null
+          
+          is_onboarded?: boolean
+          created_at?: string
+          updated_at?: string | null
+        }
+      }
+      
+      // Votre table 'users' existante (probablement moins utilisÃ©e maintenant)
       users: {
         Row: {
           id: string
@@ -3238,6 +3476,31 @@ export interface Database {
           avatar_url?: string | null
           created_at?: string
           updated_at?: string | null
+        }
+      }
+      
+      // âœ… TABLE AJOUTÃ‰E : addiction_types (Utile pour les types)
+      addiction_types: {
+        Row: {
+          id: string
+          name: string
+          icon: string | null
+          color: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          icon?: string | null
+          color?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          icon?: string | null
+          color?: string | null
+          created_at?: string
         }
       }
     }

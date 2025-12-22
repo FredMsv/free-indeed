@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { LayoutDashboard, Calendar, ShieldAlert, User, Menu, X, LogOut } from 'lucide-react';
-import Button from '@/components/ui/Button';
+import { signOutAction } from '@/lib/actions/auth-actions';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -27,7 +27,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         />
       )}
 
-      {/* sidebar */}
+      {/* Sidebar */}
       <aside className={`
         fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 transform transition-transform duration-200 ease-in-out
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
@@ -69,7 +69,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </div>
             </Link>
             
-            <button className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-400 hover:text-gray-600 w-full transition-colors">
+            <button 
+              onClick={() => signOutAction()}
+              className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-400 hover:text-gray-600 w-full transition-colors"
+            >
               <LogOut size={20} />
               Déconnexion
             </button>

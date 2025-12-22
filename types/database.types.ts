@@ -126,6 +126,87 @@ export interface Database {
   }
   public: {
     Tables: {
+      // ✅ TABLE AJOUTÉE : user_profiles (Essentiel pour votre code)
+      user_profiles: {
+        Row: {
+          id: string
+          user_id: string
+          first_name: string | null
+          last_name: string | null
+          username: string | null
+          email: string | null
+          phone_number: string | null
+          gender: string | null
+          birth_date: string | null
+          avatar_url: string | null
+          
+          // Champs Onboarding
+          addiction_type_id: string | null
+          sobriety_start_date: string | null
+          emergency_contact_phone: string | null
+          pastor_phone: string | null
+          doctor_phone: string | null
+          
+          // ✅ AJOUT : La colonne habits
+          habits: Json | null
+          
+          is_onboarded: boolean
+          created_at: string
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          first_name?: string | null
+          last_name?: string | null
+          username?: string | null
+          email?: string | null
+          phone_number?: string | null
+          gender?: string | null
+          birth_date?: string | null
+          avatar_url?: string | null
+          
+          addiction_type_id?: string | null
+          sobriety_start_date?: string | null
+          emergency_contact_phone?: string | null
+          pastor_phone?: string | null
+          doctor_phone?: string | null
+          
+          // ✅ AJOUT
+          habits?: Json | null
+          
+          is_onboarded?: boolean
+          created_at?: string
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          first_name?: string | null
+          last_name?: string | null
+          username?: string | null
+          email?: string | null
+          phone_number?: string | null
+          gender?: string | null
+          birth_date?: string | null
+          avatar_url?: string | null
+          
+          addiction_type_id?: string | null
+          sobriety_start_date?: string | null
+          emergency_contact_phone?: string | null
+          pastor_phone?: string | null
+          doctor_phone?: string | null
+          
+          // ✅ AJOUT
+          habits?: Json | null
+          
+          is_onboarded?: boolean
+          created_at?: string
+          updated_at?: string | null
+        }
+      }
+      
+      // Votre table 'users' existante (probablement moins utilisée maintenant)
       users: {
         Row: {
           id: string
@@ -150,6 +231,31 @@ export interface Database {
           avatar_url?: string | null
           created_at?: string
           updated_at?: string | null
+        }
+      }
+      
+      // ✅ TABLE AJOUTÉE : addiction_types (Utile pour les types)
+      addiction_types: {
+        Row: {
+          id: string
+          name: string
+          icon: string | null
+          color: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          icon?: string | null
+          color?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          icon?: string | null
+          color?: string | null
+          created_at?: string
         }
       }
     }

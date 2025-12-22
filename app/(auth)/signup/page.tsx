@@ -5,12 +5,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Mail, User, Lock, UserPlus, Loader2, AlertCircle } from 'lucide-react';
+import { Mail, User, Lock, UserPlus, Loader2, AlertCircle, Calendar, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { signUpAction } from '@/lib/actions/auth-actions';
 import { signUpSchema, type SignUpFormValues } from '@/lib/validations/auth';
 import { mapAuthError } from '@/lib/errors/mapping';
+
 import { Button } from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import PhoneInput from '@/components/ui/PhoneInput';
@@ -37,31 +38,24 @@ export default function SignUpPage() {
       password: '',
       firstName: '',
       lastName: '',
-      phoneNumber: ''
+      phoneNumber: '',
+      birthDate: '',
+      // ✅ Initialisation "neutre" compatible avec z.union
+      gender: undefined as unknown as SignUpFormValues["gender"]
     }
   });
 
-  const passwordValue = useWatch({ 
-    control, 
-    name: 'password', 
-    defaultValue: ''
-  });
-
-  const phoneNumberValue = useWatch({ 
-    control, 
-    name: 'phoneNumber',
-    defaultValue: '' 
-  });
+  const passwordValue = useWatch({ control, name: 'password' });
+  const phoneNumberValue = useWatch({ control, name: 'phoneNumber' });
+  const genderValue = useWatch({ control, name: 'gender' });
 
   const onSubmit = (data: SignUpFormValues) => {
     setServerError(null);
-    
     startTransition(async () => {
       try {
         const result = await signUpAction(data);
         
         if (!result.success) {
-          // Gestion des erreurs de champs spécifiques
           if (result.fieldErrors) {
             Object.entries(result.fieldErrors).forEach(([field, message]) => {
               setError(field as keyof SignUpFormValues, {
@@ -73,14 +67,12 @@ export default function SignUpPage() {
             return;
           }
 
-          // Gestion de l'erreur globale traduite
           const mappedError = mapAuthError(new Error(result.error));
           setServerError(mappedError);
           toast.error(mappedError);
           return;
         }
 
-        // Succès
         toast.success("Compte créé avec succès !");
         if (result.redirectTo) {
           router.push(result.redirectTo);
@@ -135,10 +127,49 @@ export default function SignUpPage() {
           />
 
           <PhoneInput 
-            value={phoneNumberValue}
+            value={phoneNumberValue || ''}
             onChange={(val) => setValue('phoneNumber', val)}
             error={errors.phoneNumber?.message}
           />
+
+          {/* --- GENRE (Select) --- */}
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-gray-text ml-1">Genre</label>
+            <div className="relative">
+              <select
+                {...register('gender')}
+                className={`
+                  w-full bg-white border rounded-xl px-4 py-3 outline-none appearance-none transition-all cursor-pointer
+                  ${errors.gender 
+                    ? 'border-error ring-1 ring-error/20' 
+                    : 'border-gray-border focus:border-gold focus:ring-2 focus:ring-gold/10'
+                  }
+                  ${!genderValue ? 'text-gray-400' : 'text-gray-900'}
+                `}
+                defaultValue=""
+              >
+                <option value="" disabled>Sélectionner</option>
+                <option value="male">Homme</option>
+                <option value="female">Femme</option>
+              </select>
+              
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                <ChevronDown size={18} />
+              </div>
+            </div>
+            {errors.gender && <p className="text-xs text-error ml-1">{errors.gender.message}</p>}
+          </div>
+
+          {/* --- DATE DE NAISSANCE --- */}
+          <div>
+            <Input 
+              type="date"
+              label="Date de naissance" 
+              icon={Calendar} 
+              {...register('birthDate')} 
+              error={errors.birthDate?.message}
+            />
+          </div>
           
           <div className="md:col-span-2">
             <Input 

@@ -11,7 +11,7 @@ export type OnboardingResponse = {
 
 export async function completeOnboardingAction(data: OnboardingFormValues): Promise<OnboardingResponse> {
   const supabase = await createClient();
-
+  
   // 1. Validation des données côté serveur
   const validated = onboardingSchema.safeParse(data);
   if (!validated.success) {
@@ -22,39 +22,33 @@ export async function completeOnboardingAction(data: OnboardingFormValues): Prom
 
   // 2. Vérifier l'utilisateur connecté
   const { data: { user }, error: userError } = await supabase.auth.getUser();
-
   if (userError || !user) {
     return { success: false, error: "Session expirée. Veuillez vous reconnecter." };
   }
 
-  // 3. Sauvegarder les données de l'addiction (Table user_addictions ou équivalent)
-  // Note: On utilise upsert ou insert selon ta logique DB.
-  // Ici on sécurise avec un try/catch global pour les erreurs DB
+  // 3. Sauvegarder les données
   try {
-    // Si la table user_addictions existe et est reliée
-    // (J'assume que la table existe selon ton schéma actuel, sinon il faudra adapter)
-    /* Note: Si ta table s'appelle autrement, adapte ici. 
-       Pour l'instant je commente l'insertion addiction si la table n'est pas prête, 
-       pour ne pas bloquer le build, mais voici le code standard :
-    */
-    /*
-    const { error: insertError } = await supabase
-      .from('user_addictions')
-      .insert({
-        user_id: user.id,
-        addiction_type_id: values.addictionTypeId,
-        sobriety_start_date: values.sobrietyStartDate,
-      });
+    // Nettoyage des téléphones pasteurs (retirer les entrées vides)
+    const cleanPastorPhones = values.pastorPhones 
+      ? values.pastorPhones.filter(p => p && p.trim().length > 0)
+      : null;
 
-    if (insertError) throw insertError;
-    */
+    // Pour la compatibilité avec l'ancienne colonne 'pastor_phone' (singulier), on prend le premier numéro
+    const primaryPastorPhone = cleanPastorPhones && cleanPastorPhones.length > 0 
+      ? cleanPastorPhones[0] 
+      : null;
 
     // 4. Mettre à jour le profil (user_profiles)
     const { error: profileError } = await supabase
       .from('user_profiles')
       .update({
         emergency_contact_phone: values.emergencyContactPhone,
-        pastor_phone: values.pastorPhones || null,
+        
+        // On sauvegarde le tableau complet
+        pastor_phones: cleanPastorPhones,
+        // On sauvegarde le premier pour compatibilité
+        pastor_phone: primaryPastorPhone,
+        
         doctor_phone: values.doctorPhone || null,
         is_onboarded: true, // Marqueur crucial
         updated_at: new Date().toISOString(),
