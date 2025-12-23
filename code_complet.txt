@@ -486,7 +486,7 @@ export default function OnboardingPage() {
                     {addictions.map((addiction) => (
                       <button
                         key={addiction.id} type="button"
-                        onClick={() => setValue('addictionTypeId', addiction.id, { shouldValidate: true })}
+                        onClick={() => setValue('addictionTypeId', addiction.id)}
                         className={`p-3 rounded-xl border text-left transition-all ${selectedAddictionId === addiction.id ? 'border-gold bg-gold/5 ring-1 ring-gold/20' : 'border-gray-200 hover:bg-gray-50'}`}
                       >
                         <span className="text-2xl block mb-1">{addiction.icon}</span>
@@ -1060,83 +1060,619 @@ export default function SignUpPage() {
 }
 
 ==========================================
-FICHIER: C:\Users\gegem\free-indeed\app\(dashboard)\dashboard\page.tsx
+FICHIER: C:\Users\gegem\free-indeed\app\(dashboard)\consumption\page.tsx
 ==========================================
-import { CheckCircle2, Trophy, CalendarDays } from 'lucide-react';
+import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import { ArrowLeft, Settings } from "lucide-react";
+import Link from "next/link";
+import ConsumptionForm from "@/components/consumption/ConsumptionForm";
 
-export default function DashboardPage() {
-  // SimulÃ© pour l'instant (viendra de la DB plus tard)
-  const userFirstName = "Thomas"; 
-  const daysSober = 12;
+export default async function ConsumptionPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) redirect('/login');
+
+  // RÃ©cupÃ©rer le profil et le type d'addiction
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select(`
+      daily_value_1,
+      daily_value_2,
+      addiction_types ( name )
+    `)
+    .eq('user_id', user.id)
+    .single();
+
+  if (!profile) redirect('/onboarding');
+
+
+  const addictionName = profile.addiction_types?.name || 'Default';
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       
-      {/* ðŸ‘‹ Header de bienvenue */}
+      {/* Header */}
+      <div className="flex items-center gap-4 mb-8">
+        <Link 
+            href="/settings" 
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500"
+        >
+            <ArrowLeft size={24} />
+        </Link>
+        <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                ParamÃ¨tres de Consommation
+            </h1>
+            <p className="text-gray-500 text-sm">Ajustez les donnÃ©es pour des statistiques prÃ©cises.</p>
+        </div>
+      </div>
+
+      <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-gray-100">
+        <div className="flex items-center gap-3 mb-6 pb-6 border-b border-gray-100">
+            <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center text-gray-600">
+                <Settings size={24} />
+            </div>
+            <div>
+                <h2 className="font-semibold text-gray-900">Habitudes pour : {addictionName}</h2>
+                <p className="text-xs text-gray-500">Modifiez ces valeurs Ã  tout moment.</p>
+            </div>
+        </div>
+
+        <ConsumptionForm 
+            initialValue1={profile.daily_value_1 || 0}
+            initialValue2={profile.daily_value_2 || 0}
+            addictionName={addictionName}
+        />
+      </div>
+    </div>
+  );
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\app\(dashboard)\dashboard\page.tsx
+==========================================
+import { getDashboardData } from '@/lib/actions/dashboard-actions';
+import { getTodayJournal } from '@/lib/actions/journal-actions';
+import DashboardManager from '@/components/dashboard/DashboardManager';
+import JournalWidget from '@/components/dashboard/JournalWidget';
+
+export default async function DashboardPage() {
+  
+  // On rÃ©cupÃ¨re les donnÃ©es du dashboard ET le journal du jour en parallÃ¨le
+  const [dashboardData, todayJournal] = await Promise.all([
+    getDashboardData(),
+    getTodayJournal()
+  ]);
+  
+  const { 
+    userFirstName, 
+    daysSober, 
+    hasPledgedToday, 
+    monthPledges, 
+    currentPhase, 
+    nextMilestone, 
+    stats 
+  } = dashboardData;
+
+  return (
+    <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
+      
+      {/* Header : Bonjour + Phase */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Bonjour, {userFirstName} ðŸ‘‹</h1>
-          <p className="text-gray-500">Un jour Ã  la fois. Voici votre progression.</p>
+          <p className="text-gray-500">Un jour Ã  la fois. Votre espace personnel.</p>
         </div>
-        <div className="text-sm bg-gold/10 text-gold px-4 py-2 rounded-full font-medium self-start md:self-auto">
-          Phase : Stabilisation
+      
+        <div className="text-sm bg-yellow-500/10 text-yellow-600 px-4 py-2 rounded-full font-medium self-start md:self-auto border border-yellow-500/20">
+          Phase : {currentPhase}
         </div>
       </div>
 
-      {/* ðŸ“Š Grille de Widgets Principaux */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        
-        {/* Widget 1: Compteur Principal */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center text-center relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-1 bg-gold"></div>
-          <div className="w-12 h-12 bg-gold/10 rounded-full flex items-center justify-center mb-4 text-gold">
-            <Trophy size={24} />
-          </div>
-          <span className="text-4xl font-bold text-gray-900 mb-1">{daysSober}</span>
-          <span className="text-sm text-gray-500 font-medium uppercase tracking-wide">Jours de libertÃ©</span>
-        </div>
+      {/* Gestionnaire principal (Compteur, Pledges, Stats, Calendrier) */}
+      <DashboardManager 
+        daysSober={daysSober}
+        hasPledgedToday={hasPledgedToday}
+        nextMilestone={nextMilestone}
+        monthPledges={monthPledges}
+        stats={stats}
+      />
 
-        {/* Widget 2: Engagement Quotidien */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-4 text-gray-900 font-semibold">
-              <CheckCircle2 className="text-gray-400" size={20} />
-              Engagement du jour
+      {/* Section Journaling (AjoutÃ©e en bas) */}
+      <div className="mt-8">
+         <JournalWidget 
+            initialMood={todayJournal?.mood} 
+            initialContent={todayJournal?.content} 
+         />
+      </div>
+
+    </div>
+  );
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\app\(dashboard)\journal\page.tsx
+==========================================
+import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import { Smile, Meh, Frown, Calendar as CalendarIcon, LucideIcon } from "lucide-react";
+import { SupabaseClient } from "@supabase/supabase-js";
+
+// 1. DÃ©finition du type rÃ©el de la ligne en base de donnÃ©es
+interface UserJournalRow {
+  id: string;
+  user_id: string;
+  journal_date: string;
+  mood: string;
+  content: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+type MoodConfig = {
+  icon: LucideIcon;
+  color: string;
+  bg: string;
+};
+
+const MOOD_MAP: Record<string, MoodConfig> = {
+  happy: { icon: Smile, color: "text-green-500", bg: "bg-green-50" },
+  neutral: { icon: Meh, color: "text-blue-500", bg: "bg-blue-50" },
+  sad: { icon: Frown, color: "text-orange-500", bg: "bg-orange-50" },
+};
+
+export default async function JournalHistoryPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) redirect('/login');
+
+  // Utilisation d'un client castÃ© en SupabaseClient (gÃ©nÃ©rique)
+  const client = supabase as SupabaseClient;
+
+  const { data } = await client
+    .from('user_journals')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('journal_date', { ascending: false });
+
+  // Cast des donnÃ©es vers notre interface rÃ©elle sans passer par any
+  const entries = (data as unknown as UserJournalRow[]) || [];
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-6 pb-10">
+      <header>
+        <h1 className="text-2xl font-bold text-gray-900">Mon Journal de bord</h1>
+        <p className="text-gray-500 text-sm">Retrouvez vos pensÃ©es et vos Ã©motions passÃ©es.</p>
+      </header>
+
+      <div className="space-y-4">
+        {entries.length === 0 ? (
+          <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-200">
+            <p className="text-gray-400">Aucune entrÃ©e pour le moment.</p>
+          </div>
+        ) : (
+          entries.map((entry) => {
+            const config = MOOD_MAP[entry.mood] || MOOD_MAP.neutral;
+            const MoodIcon = config.icon;
+
+            return (
+              <article 
+                key={entry.id} 
+                className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300"
+              >
+                <div className={`w-12 h-12 rounded-full flex-shrink-0 flex items-center justify-center ${config.bg} ${config.color}`}>
+                  <MoodIcon size={24} />
+                </div>
+
+                <div className="flex-1">
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="text-sm font-bold text-gray-900 first-letter:uppercase">
+                      {new Date(entry.journal_date).toLocaleDateString('fr-FR', { 
+                        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+                      })}
+                    </span>
+                    <CalendarIcon size={14} className="text-gray-300" />
+                  </div>
+                  
+                  <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap">
+                    {entry.content || "Aucune note Ã©crite ce jour-lÃ ."}
+                  </p>
+                </div>
+              </article>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\app\(dashboard)\settings\page.tsx
+==========================================
+import Link from "next/link";
+import { 
+  ChevronRight, 
+  Activity, 
+  User, 
+  Bell, 
+  ShieldAlert, 
+  LogOut 
+} from "lucide-react";
+import { signOutAction } from "@/lib/actions/auth-actions";
+
+export default function SettingsPage() {
+  
+  const settingsGroups = [
+    {
+      title: "Mon Parcours",
+      items: [
+        {
+          label: "Profil de consommation",
+          desc: "Ajustez prix, quantitÃ©s et temps perdu",
+          href: "/consumption",
+          icon: Activity,
+          color: "text-blue-600",
+          bgColor: "bg-blue-100"
+        },
+        {
+          label: "Mon compte (BientÃ´t)",
+          desc: "Email, mot de passe et donnÃ©es personnelles",
+          href: "#",
+          icon: User,
+          color: "text-gray-400",
+          bgColor: "bg-gray-100",
+          disabled: true
+        }
+      ]
+    },
+    {
+      title: "Application",
+      items: [
+        {
+          label: "Notifications (BientÃ´t)",
+          desc: "Rappels d'engagement et alertes",
+          href: "#",
+          icon: Bell,
+          color: "text-gray-400",
+          bgColor: "bg-gray-100",
+          disabled: true
+        },
+        {
+          label: "Contacts d'urgence",
+          desc: "GÃ©rer vos numÃ©ros SOS",
+          href: "/sos", // On peut rediriger vers la page SOS existante
+          icon: ShieldAlert,
+          color: "text-red-600",
+          bgColor: "bg-red-100"
+        }
+      ]
+    }
+  ];
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
+      
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">ParamÃ¨tres</h1>
+        <p className="text-gray-500">GÃ©rez vos prÃ©fÃ©rences et votre compte.</p>
+      </div>
+
+      <div className="space-y-6">
+        {settingsGroups.map((group, idx) => (
+          <div key={idx}>
+            <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3 ml-1">
+              {group.title}
+            </h2>
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              {group.items.map((item, itemIdx) => (
+                <div key={item.label}>
+                  <Link 
+                    href={item.disabled ? '#' : item.href}
+                    className={`
+                      flex items-center gap-4 p-4 transition-colors
+                      ${item.disabled ? 'cursor-default opacity-60' : 'hover:bg-gray-50 cursor-pointer'}
+                    `}
+                  >
+                    {/* IcÃ´ne */}
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${item.bgColor} ${item.color}`}>
+                      <item.icon size={20} />
+                    </div>
+
+                    {/* Texte */}
+                    <div className="flex-1">
+                      <div className="font-medium text-gray-900 flex items-center gap-2">
+                        {item.label}
+                        {item.disabled && (
+                          <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-bold uppercase">
+                            BientÃ´t
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-500">{item.desc}</p>
+                    </div>
+
+                    {/* FlÃ¨che */}
+                    {!item.disabled && <ChevronRight className="text-gray-300" size={18} />}
+                  </Link>
+                  {/* SÃ©parateur sauf pour le dernier Ã©lÃ©ment */}
+                  {itemIdx < group.items.length - 1 && <div className="h-px bg-gray-50 mx-4" />}
+                </div>
+              ))}
             </div>
-            <p className="text-gray-600 text-sm">
-              Je m&apos;engage Ã  rester sobre aujourd&apos;hui, peu importent les dÃ©fis.
-            </p>
           </div>
-          <button className="mt-4 w-full py-2 bg-gray-50 hover:bg-gold hover:text-white text-gray-600 font-medium rounded-lg transition-all text-sm border border-gray-200 hover:border-gold">
-            Je valide mon engagement
-          </button>
+        ))}
+
+        {/* Bouton DÃ©connexion (Zone Danger) */}
+        <div className="pt-4">
+            
+            <form action={signOutAction}>
+                <button 
+                    type="submit"
+                    className="w-full bg-white border border-red-100 text-red-600 font-medium p-4 rounded-xl flex items-center justify-center gap-2 hover:bg-red-50 transition-colors"
+                >
+                    <LogOut size={18} />
+                    Se dÃ©connecter
+                </button>
+            </form>
         </div>
 
-        {/* Widget 3: Prochaine Ã©tape */}
+      </div>
+    </div>
+  );
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\app\(dashboard)\sos\page.tsx
+==========================================
+import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
+import { ShieldAlert, Ambulance, HeartHandshake, Stethoscope, Users, Phone } from 'lucide-react';
+import ContactCard from '@/components/sos/ContactCard';
+
+export default async function SOSPage() {
+  const supabase = await createClient();
+
+  // 1. VÃ©rifier l'utilisateur
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
+
+  // 2. RÃ©cupÃ©rer les contacts du profil
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('*')
+    .eq('user_id', user.id)
+    .single();
+
+  if (!profile) return null;
+
+  // On prÃ©pare les listes (car pastor_phones peut Ãªtre null ou vide)
+  const pastorPhones = profile.pastor_phones || [];
+  // RÃ©tro-compatibilitÃ© si un ancien champ unique existe
+  if (profile.pastor_phone && !pastorPhones.includes(profile.pastor_phone)) {
+    pastorPhones.push(profile.pastor_phone);
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
+      
+      {/* Header */}
+      <div className="text-center space-y-2">
+        <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+          <ShieldAlert size={32} />
+        </div>
+        <h1 className="text-2xl font-bold text-gray-900">Besoin d&apos;aide immÃ©diate ?</h1>
+        <p className="text-gray-500 max-w-md mx-auto">
+          Ne restez pas seul(e). Appelez un contact de confiance ou un service d&apos;urgence maintenant.
+        </p>
+      </div>
+
+      {/* ðŸš¨ SECTION 1 : URGENCES VITALES (Statique) */}
+      <div className="space-y-4">
+        <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider ml-1">
+          Urgences Publiques
+        </h2>
+        <div className="grid gap-3">
+          <ContactCard 
+            label="SAMU / Urgences" 
+            subLabel="Service mÃ©dical d'urgence"
+            phoneNumber="15" 
+            icon={Ambulance} 
+            variant="danger" 
+          />
+          <ContactCard 
+            label="Urgence EuropÃ©enne" 
+            subLabel="NumÃ©ro unique gratuit"
+            phoneNumber="112" 
+            icon={Phone} 
+            variant="danger" 
+          />
+        </div>
+      </div>
+
+      {/* ðŸ›¡ï¸ SECTION 2 : CONTACT PERSONNEL (Dynamique) */}
+      {profile.emergency_contact_phone && (
+        <div className="space-y-4">
+          <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider ml-1">
+            Votre Contact SOS
+          </h2>
+          <ContactCard 
+            label="Contact de confiance" 
+            subLabel="Personne dÃ©signÃ©e lors de l'inscription"
+            phoneNumber={profile.emergency_contact_phone} 
+            icon={HeartHandshake} 
+            variant="primary" 
+          />
+        </div>
+      )}
+
+      {/* ðŸ‘¥ SECTION 3 : PASTEURS & MENTORS (Dynamique - Liste) */}
+      {pastorPhones.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider ml-1">
+            Vos Mentors & Pasteurs
+          </h2>
+          <div className="grid gap-3">
+            {pastorPhones.map((phone, index) => (
+              <ContactCard 
+                key={index}
+                label={`Pasteur / Mentor ${index + 1}`} 
+                phoneNumber={phone} 
+                icon={Users} 
+                variant="default" 
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ðŸ©º SECTION 4 : MÃ‰DECIN (Dynamique) */}
+      {profile.doctor_phone && (
+        <div className="space-y-4">
+          <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider ml-1">
+            Suivi MÃ©dical
+          </h2>
+          <ContactCard 
+            label="MÃ©decin Traitant" 
+            phoneNumber={profile.doctor_phone} 
+            icon={Stethoscope} 
+            variant="default" 
+          />
+        </div>
+      )}
+
+      {/* Message de bas de page */}
+      <div className="bg-gray-50 p-4 rounded-xl text-center text-sm text-gray-500 border border-gray-100 mt-8">
+        <p>
+          &quot;Aucune tentation ne vous est survenue qui n&apos;ait Ã©tÃ© humaine...&quot; <br/>
+          <span className="font-semibold text-gray-700">1 Corinthiens 10:13</span>
+        </p>
+      </div>
+
+    </div>
+  );
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\app\(dashboard)\stats\page.tsx
+==========================================
+import { ArrowLeft, TrendingUp, Smile, Frown, Meh, Activity, Handshake } from 'lucide-react';
+import Link from 'next/link';
+import { getLast7DaysMoods } from '@/lib/actions/journal-actions';
+
+export default async function StatsPage() {
+  
+  // 1. RÃ©cupÃ©ration des VRAIES donnÃ©es depuis la base de donnÃ©es
+  const moodHistory = await getLast7DaysMoods();
+
+  const prayersCount = 12; // Placeholder (Statique pour l'instant)
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
+      
+      {/* Header avec retour */}
+      <div className="flex items-center gap-4">
+        <Link 
+            href="/dashboard" 
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500"
+        >
+            <ArrowLeft size={24} />
+        </Link>
+        <div>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                Mes Statistiques <Activity className="text-green-500" size={24}/>
+            </h1>
+            <p className="text-gray-500">Analyse dÃ©taillÃ©e de votre parcours.</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        {/* 1. GRAPHIQUE DE PROGRESSION (Simulation Visuelle) */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 col-span-1 md:col-span-2">
+            <div className="flex items-center justify-between mb-6">
+                <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                    <TrendingUp size={18} className="text-blue-500"/>
+                    Constance sur 30 jours
+                </h3>
+                <span className="text-sm font-medium text-green-600 bg-green-50 px-3 py-1 rounded-full">+12% vs mois dernier</span>
+            </div>
+            
+            {/* Histogramme CSS simple */}
+            <div className="h-48 flex items-end justify-between gap-2">
+                {[40, 60, 45, 70, 80, 50, 90, 85, 60, 75, 95, 100].map((height, i) => (
+                    <div key={i} className="w-full bg-blue-50 rounded-t-md relative group">
+                        <div 
+                            style={{ height: `${height}%` }} 
+                            className="absolute bottom-0 w-full bg-blue-500 rounded-t-md transition-all duration-1000 ease-out group-hover:bg-blue-600"
+                        ></div>
+                    </div>
+                ))}
+            </div>
+            <div className="flex justify-between text-xs text-gray-400 mt-2 font-medium">
+                <span>DÃ©but du mois</span>
+                <span>Aujourd&apos;hui</span>
+            </div>
+        </div>
+
+        {/* 2. VARIATIONS D'HUMEUR (ConnectÃ© aux donnÃ©es rÃ©elles) */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-          <div className="flex items-center gap-2 mb-4 text-gray-900 font-semibold">
-            <CalendarDays className="text-blue-500" size={20} />
-            Prochain Jalon
-          </div>
-          <div className="space-y-4">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Objectif 14 jours</span>
-              <span className="text-gray-900 font-medium">85%</span>
+            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <Smile size={18} className="text-yellow-500"/>
+                Humeur (7 derniers jours)
+            </h3>
+            <div className="flex justify-between items-center">
+                {moodHistory.map((item, i) => (
+                    <div key={i} className="flex flex-col items-center gap-2">
+                        <div className={`
+                            w-8 h-8 rounded-full flex items-center justify-center text-white text-xs shadow-sm transition-all
+                            ${item.mood === 'happy' ? 'bg-green-400' : 
+                              item.mood === 'neutral' ? 'bg-blue-400' : 
+                              item.mood === 'sad' ? 'bg-orange-400' : 'bg-gray-100 text-gray-300'}
+                        `}>
+                            {item.mood === 'happy' && <Smile size={16}/>}
+                            {item.mood === 'neutral' && <Meh size={16}/>}
+                            {item.mood === 'sad' && <Frown size={16}/>}
+                            {!item.mood && <span className="text-[10px]">â€¢</span>}
+                        </div>
+                        <span className="text-[10px] text-gray-400 font-medium uppercase">{item.day}</span>
+                    </div>
+                ))}
             </div>
-            <div className="w-full bg-gray-100 rounded-full h-2">
-              <div className="bg-blue-500 h-2 rounded-full" style={{ width: '85%' }}></div>
+            <p className="text-xs text-gray-500 mt-6 text-center italic">
+            &quot;Vos notes serviront bientÃ´t Ã  votre assistant IA.&quot;
+            </p>
+        </div>
+
+        {/* 3. PRIÃˆRES (Statique pour l'instant) */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden">
+            {/* Badge "BientÃ´t" */}
+            <div className="absolute top-3 right-3 bg-gray-100 text-gray-500 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wide">
+                BÃªta
             </div>
-            <p className="text-xs text-gray-400">Plus que 2 jours pour atteindre votre prochain trophÃ©e !</p>
-          </div>
+
+            <h3 className="font-bold text-gray-900 mb-2 flex items-center gap-2">
+                <Handshake size={18} className="text-purple-500"/> 
+                PriÃ¨res & MÃ©ditations
+            </h3>
+            
+            <div className="flex items-end gap-2 mt-4">
+                <span className="text-5xl font-bold text-gray-900">{prayersCount}</span>
+                <span className="text-sm text-gray-500 mb-2 font-medium">sessions ce mois-ci</span>
+            </div>
+
+            <div className="mt-4 w-full bg-gray-100 h-2 rounded-full overflow-hidden">
+                <div className="bg-purple-500 h-full w-1/3 rounded-full"></div>
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+                Objectif : 30 sessions / mois
+            </p>
         </div>
 
       </div>
-
-      {/* Zone de contenu secondaire (Graphique / Journal) - Vide pour l'instant */}
-      <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 min-h-[300px] flex items-center justify-center text-gray-400 border-dashed">
-        <p>BientÃ´t : Graphique d&apos;humeur et Journal de bord</p>
-      </div>
-
     </div>
   );
 }
@@ -1149,7 +1685,7 @@ FICHIER: C:\Users\gegem\free-indeed\app\(dashboard)\layout.tsx
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Calendar, ShieldAlert, User, Menu, X, LogOut } from 'lucide-react';
+import { LayoutDashboard, ShieldAlert, Menu, X, LogOut, Activity, Settings, Book } from 'lucide-react';
 import { signOutAction } from '@/lib/actions/auth-actions';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -1158,8 +1694,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const navigation = [
     { name: 'Tableau de bord', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Calendrier', href: '/calendar', icon: Calendar },
-    { name: 'Ma Progression', href: '/stats', icon: User }, // Placeholder
+    { name: 'Mon Journal', href: '/journal', icon: Book },
+    { name: 'Mes statistiques', href: '/stats', icon: Activity },
+    { name: 'ParamÃ¨tres', href: '/settings', icon: Settings },
   ];
 
   return (
@@ -1475,6 +2012,1057 @@ export default function Home() {
       </div>
     </div>
   )
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\components\consumption\ConsumptionForm.tsx
+==========================================
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Save, Loader2, Euro, Clock, Activity, Cigarette, Beer } from "lucide-react";
+import { updateConsumptionSettings } from "@/lib/actions/settings-actions";
+
+interface ConsumptionFormProps {
+  initialValue1: number;
+  initialValue2: number;
+  addictionName: string;
+}
+
+// Fonction utilitaire pour convertir DÃ©cimal -> [Heures, Minutes]
+// Ex: 1.5 -> [1, 30]
+const decimalToTime = (decimal: number) => {
+  const hours = Math.floor(decimal || 0);
+  const minutes = Math.round((decimal - hours) * 60);
+  return { hours, minutes };
+};
+
+export default function ConsumptionForm({ initialValue1, initialValue2, addictionName }: ConsumptionFormProps) {
+  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+
+  const norm = addictionName.toUpperCase();
+
+  // --- CONFIGURATION DU FORMULAIRE SELON L'ADDICTION ---
+  let config = {
+    // Par dÃ©faut (Mode Argent)
+    isTime1: false,
+    label1: "CoÃ»t journalier (â‚¬)",
+    placeholder1: "10",
+    icon1: Euro,
+    
+    isTime2: false,
+    label2: "QuantitÃ© / Calories",
+    placeholder2: "0",
+    icon2: Activity,
+    
+    desc: "Aidez-nous Ã  calculer vos Ã©conomies."
+  };
+
+  if (norm.includes('TABAC') || norm.includes('TOBACCO')) {
+    config = {
+      isTime1: false,
+      label1: "Prix moyen du paquet (â‚¬)",
+      placeholder1: "12.50",
+      icon1: Euro,
+      isTime2: false,
+      label2: "Cigarettes fumÃ©es par jour",
+      placeholder2: "15",
+      icon2: Cigarette,
+      desc: "Nous calculerons l'argent Ã©conomisÃ© et la vie gagnÃ©e."
+    };
+  } else if (norm.includes('PORNO') || norm.includes('SEX')) {
+    config = {
+      isTime1: true, // âœ… Mode Temps activÃ©
+      label1: "Temps perdu par jour",
+      placeholder1: "",
+      icon1: Clock,
+      isTime2: false,
+      label2: "Niveau de confiance (0-10)",
+      placeholder2: "5",
+      icon2: Activity,
+      desc: "Nous suivrons le temps de vie que vous rÃ©cupÃ©rez."
+    };
+  } else if (norm.includes('SOCIAL') || norm.includes('ECRAN')) {
+    config = {
+      isTime1: true, // âœ… Mode Temps activÃ©
+      label1: "Temps d'Ã©cran moyen",
+      placeholder1: "",
+      icon1: Clock,
+      isTime2: true, // âœ… Mode Temps activÃ© aussi pour la productivitÃ©
+      label2: "Dont temps productif estimÃ©",
+      placeholder2: "",
+      icon2: Activity,
+      desc: "Transformez ce temps perdu en temps productif."
+    };
+  } else if (norm.includes('ALCOOL')) {
+     config = {
+      isTime1: false,
+      label1: "DÃ©pense moyenne par jour (â‚¬)",
+      placeholder1: "8",
+      icon1: Euro,
+      isTime2: false,
+      label2: "Calories estimÃ©es par jour",
+      placeholder2: "400",
+      icon2: Beer,
+      desc: "Suivez vos Ã©conomies financiÃ¨res et caloriques."
+    };
+  }
+
+  // --- GESTION D'Ã‰TAT POUR LES CHAMPS TEMPS ---
+  // On initialise les Ã©tats seulement si c'est nÃ©cessaire, mais les hooks doivent Ãªtre appelÃ©s inconditionnellement
+  const t1 = decimalToTime(initialValue1);
+  const [h1, setH1] = useState(t1.hours);
+  const [m1, setM1] = useState(t1.minutes);
+
+  const t2 = decimalToTime(initialValue2);
+  const [h2, setH2] = useState(t2.hours);
+  const [m2, setM2] = useState(t2.minutes);
+
+  // Calcul dynamique des valeurs dÃ©cimales pour les inputs cachÃ©s
+  const calculatedValue1 = config.isTime1 ? (h1 + m1 / 60) : initialValue1;
+  const calculatedValue2 = config.isTime2 ? (h2 + m2 / 60) : initialValue2;
+
+  const handleSubmit = (formData: FormData) => {
+    startTransition(async () => {
+      // Si c'est un champ temps, on Ã©crase la valeur du formData avec notre calcul
+      if (config.isTime1) formData.set("dailyValue1", calculatedValue1.toString());
+      if (config.isTime2) formData.set("dailyValue2", calculatedValue2.toString());
+
+      const result = await updateConsumptionSettings(formData);
+      if (result.success) {
+        toast.success("PrÃ©fÃ©rences sauvegardÃ©es !");
+        router.refresh();
+      } else {
+        toast.error(result.error);
+      }
+    });
+  };
+
+  return (
+    <form action={handleSubmit} className="space-y-6">
+      
+      <div className="bg-blue-50 text-blue-800 p-4 rounded-xl text-sm border border-blue-100 mb-6 flex gap-3">
+        <div className="text-xl">â„¹ï¸</div>
+        <div>
+           <strong>{config.desc}</strong><br/>
+           Ces donnÃ©es servent uniquement Ã  vos statistiques personnelles.
+        </div>
+      </div>
+
+      {/* --- CHAMP 1 --- */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+          <config.icon1 size={16} className="text-gray-400" />
+          {config.label1}
+        </label>
+
+        {config.isTime1 ? (
+          // ðŸ•’ MODE TEMPS (Heures + Minutes)
+          <div className="flex gap-4">
+             <div className="flex-1 relative">
+                <input
+                  type="number" min="0" value={h1} onChange={(e) => setH1(Number(e.target.value))}
+                  className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-gold focus:ring-2 focus:ring-gold/10 transition-all"
+                />
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">h</span>
+             </div>
+             <div className="flex-1 relative">
+                <input
+                  type="number" min="0" max="59" value={m1} onChange={(e) => setM1(Number(e.target.value))}
+                  className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-gold focus:ring-2 focus:ring-gold/10 transition-all"
+                />
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">min</span>
+             </div>
+             {/* Input cachÃ© pour l'envoi au serveur */}
+             <input type="hidden" name="dailyValue1" value={calculatedValue1} />
+          </div>
+        ) : (
+          // ðŸ”¢ MODE NOMBRE CLASSIQUE
+          <input
+            name="dailyValue1"
+            type="number"
+            step="0.01"
+            defaultValue={initialValue1 || ''}
+            placeholder={config.placeholder1}
+            className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-gold focus:ring-2 focus:ring-gold/10 transition-all"
+          />
+        )}
+      </div>
+
+      {/* --- CHAMP 2 --- */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+          <config.icon2 size={16} className="text-gray-400" />
+          {config.label2}
+        </label>
+
+        {config.isTime2 ? (
+          // ðŸ•’ MODE TEMPS (Heures + Minutes)
+          <div className="flex gap-4">
+             <div className="flex-1 relative">
+                <input
+                  type="number" min="0" value={h2} onChange={(e) => setH2(Number(e.target.value))}
+                  className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-gold focus:ring-2 focus:ring-gold/10 transition-all"
+                />
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">h</span>
+             </div>
+             <div className="flex-1 relative">
+                <input
+                  type="number" min="0" max="59" value={m2} onChange={(e) => setM2(Number(e.target.value))}
+                  className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-gold focus:ring-2 focus:ring-gold/10 transition-all"
+                />
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">min</span>
+             </div>
+             <input type="hidden" name="dailyValue2" value={calculatedValue2} />
+          </div>
+        ) : (
+          // ðŸ”¢ MODE NOMBRE CLASSIQUE
+          <input
+            name="dailyValue2"
+            type="number"
+            step="0.1"
+            defaultValue={initialValue2 || ''}
+            placeholder={config.placeholder2}
+            className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-gold focus:ring-2 focus:ring-gold/10 transition-all"
+          />
+        )}
+      </div>
+
+      <button
+        type="submit"
+        disabled={isPending}
+        className="w-full bg-gray-900 text-white font-medium py-3 rounded-xl hover:bg-black transition-colors flex items-center justify-center gap-2 shadow-lg shadow-gray-200"
+      >
+        {isPending ? <Loader2 className="animate-spin" /> : <Save size={18} />}
+        Enregistrer les paramÃ¨tres
+      </button>
+    </form>
+  );
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\components\dashboard\widgets\JournalWidget.tsx
+==========================================
+import { getTodayJournal } from "@/lib/actions/journal-actions";
+import { JournalForm } from "../JournalForm";
+import { BookOpen } from "lucide-react";
+import Link from "next/link";
+
+export async function JournalWidget() {
+  const todayEntry = await getTodayJournal();
+
+  return (
+    <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm h-full flex flex-col">
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-blue-50 rounded-lg">
+            <BookOpen className="w-5 h-5 text-blue-600" />
+          </div>
+          <h2 className="font-bold text-gray-900">Journal du jour</h2>
+        </div>
+        <Link href="/journal" className="text-xs text-blue-600 font-medium hover:underline">
+          Historique
+        </Link>
+      </div>
+
+      <JournalForm initialData={todayEntry || undefined} />
+    </div>
+  );
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\components\dashboard\CalendarWidget.tsx
+==========================================
+"use client";
+
+import { useState, useEffect } from 'react';
+import { ChevronLeft, ChevronRight, Loader2, Minus } from 'lucide-react';
+import { getMonthPledges } from '@/lib/actions/calendar-actions';
+import { cn } from '@/lib/utils';
+
+interface CalendarWidgetProps {
+  initialPledges?: string[];
+  miniMode?: boolean;
+  isEditMode?: boolean;
+  onDelete?: () => void;
+}
+
+export default function CalendarWidget({ 
+  initialPledges = [], 
+  miniMode = false,
+  isEditMode = false,
+  onDelete
+}: CalendarWidgetProps) {
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [pledgedDates, setPledgedDates] = useState<string[]>(initialPledges);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (currentDate.getMonth() !== new Date().getMonth()) {
+        const fetchData = async () => {
+        setIsLoading(true);
+        const dates = await getMonthPledges(currentDate.getFullYear(), currentDate.getMonth());
+        setPledgedDates(dates);
+        setIsLoading(false);
+        };
+        fetchData();
+    }
+  }, [currentDate]);
+
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDay = (new Date(year, month, 1).getDay() + 6) % 7;
+
+  const changeMonth = (val: number) => setCurrentDate(new Date(year, month + val, 1));
+
+  const days = [];
+  for (let i = 0; i < firstDay; i++) days.push(<div key={`empty-${i}`} />);
+  
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = new Date(year, month, d).toLocaleDateString('en-CA');
+    const isPledged = pledgedDates.includes(dateStr);
+    const isToday = new Date().toDateString() === new Date(year, month, d).toDateString();
+
+    days.push(
+      <div key={d} className={cn(
+        "flex items-center justify-center rounded-md relative font-medium transition-all",
+        miniMode ? "h-full w-full" : "aspect-square", 
+        isPledged ? "bg-success text-white font-bold" : "bg-gray-50 text-gray-600",
+        isToday && !isPledged && "ring-1 ring-gold ring-offset-1 z-10",
+        miniMode ? "text-[10px]" : "text-sm"
+      )}>
+        {d}
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn(
+      // On applique ici les mÃªmes classes que votre exemple (bg-white, border-gray-100, shadow-sm...)
+      "bg-white border border-gray-100 shadow-sm flex flex-col h-full transition-all duration-500 relative overflow-hidden",
+      miniMode ? "p-6 rounded-2xl" : "p-6 rounded-2xl"
+    )}>
+      
+      {/* --- AJOUT : La barre jaune dÃ©corative en haut (Comme sur le widget TrophÃ©e) --- */}
+      <div className="absolute top-0 left-0 w-full h-1 bg-yellow-500"></div>
+
+      {/* BOUTON SUPPRIMER */}
+      {isEditMode && onDelete && (
+        <button 
+            onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+            }}
+            className="absolute top-6 right-6 z-50 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center shadow-md hover:bg-red-600 hover:scale-110 transition-all animate-in zoom-in duration-200"
+            title="Supprimer le widget"
+        >
+            <Minus size={16} strokeWidth={4} />
+        </button>
+      )}
+
+      {/* Header */}
+      <div className={cn("flex items-center justify-between", miniMode ? "mb-2" : "mb-4")}>
+        <span className={cn("font-bold text-gray-900 capitalize", miniMode ? "text-sm" : "text-lg")}>
+            {currentDate.toLocaleDateString('fr-FR', { month: 'long' })} <span className="text-gray-400 font-normal">{miniMode ? '' : year}</span>
+        </span>
+        
+        <div className={cn("flex gap-1", isEditMode ? "opacity-0 pointer-events-none" : "opacity-100")}>
+            <button 
+              onClick={(e) => { e.stopPropagation(); changeMonth(-1); }} 
+              className="p-1 hover:bg-gray-100 rounded text-gray-400 transition-colors"
+            >
+                <ChevronLeft size={miniMode ? 16 : 20} />
+            </button>
+            <button 
+              onClick={(e) => { e.stopPropagation(); changeMonth(1); }} 
+              className="p-1 hover:bg-gray-100 rounded text-gray-400 transition-colors"
+              disabled={new Date() < new Date(year, month + 1, 1)}
+            >
+                <ChevronRight size={miniMode ? 16 : 20} />
+            </button>
+        </div>
+      </div>
+
+      {/* Grille */}
+      <div className="flex-1 flex flex-col justify-between relative">
+          {isLoading && (
+            <div className="absolute inset-0 bg-white/80 z-20 flex items-center justify-center">
+              <Loader2 className="animate-spin text-gold w-5 h-5"/>
+            </div>
+          )}
+          
+          <div className="grid grid-cols-7 text-center mb-1">
+            {['L','M','M','J','V','S','D'].map((d, i) => (
+                <span key={i} className={cn("font-bold text-gray-400", miniMode ? "text-[9px]" : "text-xs")}>
+                  {d}
+                </span>
+            ))}
+          </div>
+          
+          <div className={cn(
+              "grid grid-cols-7 flex-1", 
+              miniMode ? "gap-1 auto-rows-fr" : "gap-2"
+          )}>
+            {days}
+          </div>
+      </div>
+    </div>
+  );
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\components\dashboard\DailyPledgeWidget.tsx
+==========================================
+"use client";
+
+import { useState, useTransition } from 'react';
+import { CheckCircle2, Loader2, Check } from 'lucide-react';
+import { toast } from 'sonner';
+import confetti from 'canvas-confetti'; 
+import { submitDailyPledge } from '@/lib/actions/pledge-actions';
+
+interface DailyPledgeWidgetProps {
+  initialHasPledged: boolean;
+}
+
+export default function DailyPledgeWidget({ initialHasPledged }: DailyPledgeWidgetProps) {
+  const [hasPledged, setHasPledged] = useState(initialHasPledged);
+  const [isPending, startTransition] = useTransition();
+
+  const triggerConfetti = () => {
+    const end = Date.now() + 1000;
+    const colors = ['#ffc300', '#ffffff'];
+
+    (function frame() {
+      confetti({
+        particleCount: 2,
+        angle: 60,
+        spread: 55,
+        origin: { x: 0 },
+        colors: colors
+      });
+      confetti({
+        particleCount: 2,
+        angle: 120,
+        spread: 55,
+        origin: { x: 1 },
+        colors: colors
+      });
+
+      if (Date.now() < end) {
+        requestAnimationFrame(frame);
+      }
+    }());
+  };
+
+  const handlePledge = () => {
+    if (hasPledged) return;
+
+    startTransition(async () => {
+      try {
+        const result = await submitDailyPledge();
+        
+        if (result.success) {
+          setHasPledged(true);
+          toast.success("Engagement validÃ© ! Courage pour aujourd'hui ðŸ’ª");
+          
+          // DÃ©clenche l'animation
+          try { triggerConfetti(); } catch (e) { console.error(e); }
+        } else {
+          toast.error(result.error || "Une erreur est survenue");
+        }
+      } catch (error) {
+        console.error("Erreur widget:", error);
+        toast.error("Erreur de connexion");
+      }
+    });
+  };
+
+  return (
+    <div className={`
+      p-6 rounded-2xl shadow-sm border transition-all duration-500 flex flex-col justify-between relative overflow-hidden
+      ${hasPledged 
+        ? 'bg-gradient-to-br from-gold/10 to-white border-gold/30' 
+        : 'bg-white border-gray-100'}
+    `}>
+      
+      {/* Contenu Texte + IcÃ´ne */}
+      <div>
+        <div className="flex items-center gap-2 mb-4">
+          {hasPledged ? (
+            <div className="w-8 h-8 rounded-full bg-success/10 flex items-center justify-center text-success animate-in zoom-in">
+              <Check size={18} strokeWidth={3} />
+            </div>
+          ) : (
+            <CheckCircle2 className="text-gray-400" size={24} />
+          )}
+          <span className={`font-semibold ${hasPledged ? 'text-gray-900' : 'text-gray-900'}`}>
+            {hasPledged ? "Engagement validÃ©" : "Engagement du jour"}
+          </span>
+        </div>
+        
+        <p className="text-gray-600 text-sm leading-relaxed">
+          {hasPledged 
+            ? "Vous avez pris l'engagement de rester libre aujourd'hui. Une promesse envers vous-mÃªme."
+            : "Je m'engage Ã  rester sobre aujourd'hui, peu importent les dÃ©fis et les tentations."}
+        </p>
+      </div>
+
+      {/* Bouton d'action */}
+      <button 
+        onClick={handlePledge}
+        disabled={hasPledged || isPending}
+        className={`
+          mt-6 w-full py-3 rounded-xl font-medium transition-all text-sm flex items-center justify-center gap-2
+          ${hasPledged
+            ? 'bg-success text-white cursor-default shadow-sm'
+            : 'bg-gray-50 hover:bg-gold hover:text-white text-gray-600 border border-gray-200 hover:border-gold hover:shadow-md active:scale-[0.98]'
+          }
+        `}
+      >
+        {isPending ? (
+          <Loader2 className="animate-spin" size={18} />
+        ) : hasPledged ? (
+          <>
+            <Check size={18} /> ValidÃ© pour aujourd&apos;hui
+          </>
+        ) : (
+          "Je valide mon engagement"
+        )}
+      </button>
+    </div>
+  );
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\components\dashboard\DashboardManager.tsx
+==========================================
+"use client";
+
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { Settings2, Trophy, CalendarDays, Plus, TrendingUp } from 'lucide-react';
+import DailyPledgeWidget from './DailyPledgeWidget';
+import CalendarWidget from './CalendarWidget';
+import StatsWidget from './StatsWidget';
+
+interface MilestoneData {
+  label: string;
+  progress: number;
+  daysLeft: number;
+}
+
+interface StatsData {
+  label1: string; value1: string; unit1: string; icon1: string;
+  label2: string; value2: string; unit2: string; icon2: string;
+}
+
+interface DashboardManagerProps {
+  daysSober: number;
+  hasPledgedToday: boolean;
+  nextMilestone: MilestoneData;
+  monthPledges: string[];
+  stats: StatsData; // âœ… Les donnÃ©es stats
+}
+
+export default function DashboardManager({ 
+  daysSober, 
+  hasPledgedToday, 
+  nextMilestone, 
+  monthPledges,
+  stats 
+}: DashboardManagerProps) {
+  
+  const router = useRouter();
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+  const dashboardRef = useRef<HTMLDivElement>(null);
+
+  // LocalStorage States
+  const [showCalendar, setShowCalendar] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('dashboard_show_calendar') === 'true';
+  });
+
+  const [showStats, setShowStats] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const saved = localStorage.getItem('dashboard_show_stats');
+    return saved === null ? true : saved === 'true'; // âœ… Par dÃ©faut TRUE
+  });
+  
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setIsMounted(true), 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Click Outside Logic
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!isEditMode) return;
+      const target = event.target as HTMLElement;
+      if (dashboardRef.current && !dashboardRef.current.contains(target) && !target.closest('[data-action="toggle-edit"]')) {
+        setIsEditMode(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isEditMode]);
+
+  // Toggles
+  const toggleCalendar = () => {
+    const newState = !showCalendar;
+    setShowCalendar(newState);
+    localStorage.setItem('dashboard_show_calendar', String(newState));
+  };
+
+  const toggleStats = () => {
+    const newState = !showStats;
+    setShowStats(newState);
+    localStorage.setItem('dashboard_show_stats', String(newState));
+  };
+
+  // Long Press Logic
+  const startPress = useCallback(() => {
+    if (isEditMode) return;
+    timerRef.current = setTimeout(() => {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50);
+      setIsEditMode(true);
+    }, 800);
+  }, [isEditMode]);
+
+  const cancelPress = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  const longPressHandlers = {
+    onMouseDown: startPress,
+    onMouseUp: cancelPress,
+    onMouseLeave: cancelPress,
+    onTouchStart: startPress,
+    onTouchEnd: cancelPress,
+  };
+
+  if (!isMounted) return null;
+
+  return (
+    <div className="space-y-4" ref={dashboardRef}>
+      
+      {/* Header : Bouton Personnaliser */}
+      <div className="flex justify-end">
+        <button 
+          data-action="toggle-edit" 
+          onClick={() => setIsEditMode(!isEditMode)}
+          className={`
+            text-xs font-medium flex items-center gap-2 px-3 py-1.5 rounded-full transition-all border
+            ${isEditMode 
+                ? 'bg-gray-900 text-white border-gray-900 shadow-md transform scale-105' 
+                : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700'}
+          `}
+        >
+          <Settings2 size={14} />
+          {isEditMode ? 'Terminer' : 'Personnaliser'}
+        </button>
+      </div>
+
+      {/* GRILLE */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-[220px]">
+        
+        {/* 1. COMPTEUR */}
+        <div className="col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center text-center relative overflow-hidden justify-center h-full w-full">
+          <div className="absolute top-0 left-0 w-full h-1 bg-yellow-500"></div>
+          <div className="w-10 h-10 bg-yellow-500/10 rounded-full flex items-center justify-center mb-3 text-yellow-600">
+            <Trophy size={20} />
+          </div>
+          <span className="text-4xl font-bold text-gray-900 mb-1">{daysSober}</span>
+          <span className="text-xs text-gray-500 font-bold uppercase tracking-wider">Jours de libertÃ©</span>
+        </div>
+
+        {/* 2. ENGAGEMENT */}
+        <div className="col-span-1 h-full w-full">
+            <DailyPledgeWidget initialHasPledged={hasPledgedToday} />
+        </div>
+
+        {/* 3. PROCHAIN JALON */}
+        <div className="col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center h-full w-full">
+          <div className="flex items-center gap-2 mb-4 text-gray-900 font-semibold text-sm">
+            <CalendarDays className="text-blue-500" size={18} />
+            Prochain Jalon
+          </div>
+          <div className="space-y-3">
+            <div className="flex justify-between text-xs font-medium">
+              <span className="text-gray-500">{nextMilestone.label}</span>
+              <span className="text-gray-900">{nextMilestone.progress}%</span>
+            </div>
+            <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+              <div 
+                className="bg-blue-500 h-2 rounded-full transition-all duration-1000 ease-out" 
+                style={{ width: `${nextMilestone.progress}%` }}
+              ></div>
+            </div>
+            <p className="text-[10px] text-gray-400">
+               Il reste {nextMilestone.daysLeft} jours
+            </p>
+         </div>
+        </div>
+
+        {/* 4. CALENDRIER */}
+        {showCalendar && (
+          <div 
+            className="col-span-1 relative group h-full w-full overflow-hidden animate-in fade-in zoom-in duration-300 cursor-pointer"
+            {...longPressHandlers}
+          >
+            {isEditMode && <div className="absolute inset-0 z-10 bg-white/10 rounded-2xl" />}
+            <CalendarWidget 
+                initialPledges={monthPledges} 
+                miniMode={true} 
+                isEditMode={isEditMode}
+                onDelete={toggleCalendar}
+            />
+          </div>
+        )}
+
+        {!showCalendar && isEditMode && (
+            <button 
+                onClick={toggleCalendar}
+                className="col-span-1 h-full w-full border-2 border-dashed border-gray-300 rounded-2xl flex flex-col items-center justify-center text-gray-400 hover:border-yellow-500 hover:text-yellow-600 hover:bg-yellow-500/5 transition-all group animate-in fade-in zoom-in"
+            >
+                <div className="w-12 h-12 rounded-full bg-gray-100 group-hover:bg-yellow-500/10 flex items-center justify-center mb-2 transition-colors">
+                    <Plus size={24} />
+                </div>
+                <span className="font-medium text-sm">Ajouter Calendrier</span>
+            </button>
+        )}
+
+        {/* 5. STATS (Cliquable pour navigation) */}
+        {showStats && (
+            <div 
+                className="col-span-1 relative group h-full w-full overflow-hidden animate-in fade-in zoom-in duration-300 cursor-pointer"
+                {...longPressHandlers}
+                onClick={() => !isEditMode && router.push('/stats')}
+            >
+                {isEditMode && <div className="absolute inset-0 z-10 bg-white/10 rounded-2xl" />}
+                <StatsWidget 
+                    data={stats} // âœ… DonnÃ©es dynamiques
+                    isEditMode={isEditMode}
+                    onDelete={toggleStats}
+                />
+            </div>
+        )}
+
+        {!showStats && isEditMode && (
+            <button 
+                onClick={toggleStats}
+                className="col-span-1 h-full w-full border-2 border-dashed border-gray-300 rounded-2xl flex flex-col items-center justify-center text-gray-400 hover:border-green-500 hover:text-green-600 hover:bg-green-500/5 transition-all group animate-in fade-in zoom-in"
+            >
+                <div className="w-12 h-12 rounded-full bg-gray-100 group-hover:bg-green-500/10 flex items-center justify-center mb-2 transition-colors">
+                    <TrendingUp size={24} />
+                </div>
+                <span className="font-medium text-sm">Ajouter Stats</span>
+            </button>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\components\dashboard\JournalWidget.tsx
+==========================================
+"use client";
+
+import { useState, useTransition } from "react";
+import { Smile, Meh, Frown, Save, Loader2, MessageSquare } from "lucide-react";
+import { saveJournalEntry } from "@/lib/actions/journal-actions";
+import { toast } from "sonner";
+
+interface JournalWidgetProps {
+  initialMood?: string | null;
+  initialContent?: string | null;
+}
+
+export default function JournalWidget({ initialMood, initialContent }: JournalWidgetProps) {
+  const [mood, setMood] = useState(initialMood || "");
+  const [content, setContent] = useState(initialContent || "");
+  const [isExpanded, setIsExpanded] = useState(!!initialMood); // Ouvrir si dÃ©jÃ  rempli
+  const [isPending, startTransition] = useTransition();
+
+  const moods = [
+    { value: "happy", icon: Smile, color: "text-green-500", bg: "bg-green-100", label: "Bien" },
+    { value: "neutral", icon: Meh, color: "text-blue-500", bg: "bg-blue-100", label: "Moyen" },
+    { value: "sad", icon: Frown, color: "text-orange-500", bg: "bg-orange-100", label: "Difficile" },
+  ];
+
+  const handleSubmit = () => {
+    if (!mood) {
+        toast.error("SÃ©lectionnez une humeur");
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append("mood", mood);
+    formData.append("content", content);
+
+    startTransition(async () => {
+      const res = await saveJournalEntry(formData);
+      if (res.success) {
+        toast.success("Journal enregistrÃ© !");
+        setIsExpanded(false);
+      } else {
+        toast.error("Erreur...");
+      }
+    });
+  };
+
+  if (!isExpanded) {
+    return (
+      <button 
+        onClick={() => setIsExpanded(true)}
+        className="w-full bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between hover:bg-gray-50 transition-all group"
+      >
+        <div className="flex items-center gap-3">
+           <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-600">
+             <MessageSquare size={20} />
+           </div>
+           <div className="text-left">
+             <p className="font-semibold text-gray-900 text-sm">Journal de bord</p>
+             <p className="text-xs text-gray-500">Comment vous sentez-vous ?</p>
+           </div>
+        </div>
+        <div className="text-gray-300 group-hover:text-purple-500 transition-colors">
+            +
+        </div>
+      </button>
+    );
+  }
+
+  return (
+    <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm animate-in fade-in zoom-in-95">
+      <h3 className="font-semibold text-gray-900 mb-4 text-sm">Humeur du jour</h3>
+      
+      {/* 1. Smileys */}
+      <div className="flex justify-between gap-2 mb-4">
+        {moods.map((m) => (
+          <button
+            key={m.value}
+            onClick={() => setMood(m.value)}
+            className={`
+              flex-1 py-3 rounded-xl flex flex-col items-center gap-2 transition-all border
+              ${mood === m.value 
+                ? `${m.bg} ${m.color} border-${m.color.split('-')[1]}-200 ring-1 ring-${m.color.split('-')[1]}-200` 
+                : 'bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100'}
+            `}
+          >
+            <m.icon size={24} />
+            <span className="text-xs font-medium">{m.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* 2. Text Area */}
+      <textarea
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        placeholder="Une note pour plus tard ? (Victoire, difficultÃ©, pensÃ©e...)"
+        className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 mb-4 min-h-[80px] resize-none"
+      />
+
+      {/* 3. Actions */}
+      <div className="flex gap-2">
+        <button 
+            onClick={() => setIsExpanded(false)}
+            className="flex-1 py-2 text-sm text-gray-500 hover:bg-gray-50 rounded-lg"
+        >
+            Annuler
+        </button>
+        <button 
+            onClick={handleSubmit}
+            disabled={isPending || !mood}
+            className="flex-1 bg-gray-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-black transition-colors flex items-center justify-center gap-2"
+        >
+            {isPending ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            Enregistrer
+        </button>
+      </div>
+    </div>
+  );
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\components\dashboard\StatsWidget.tsx
+==========================================
+"use client";
+
+import { Wallet, Activity, Minus, Clock, Hourglass, Brain, Smartphone, Zap } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+const getIcon = (iconName: string) => {
+  switch (iconName) {
+    case 'wallet': return <Wallet size={20} />;
+    case 'activity': return <Activity size={20} />;
+    case 'clock': return <Clock size={20} />;
+    case 'hourglass': return <Hourglass size={20} />;
+    case 'brain': return <Brain size={20} />;
+    // âœ… CORRECTION ICI : Smartphone au lieu de SmartphoneOff
+    case 'smartphone-off': return <Smartphone size={20} />;
+    case 'zap': return <Zap size={20} />;
+    default: return <Activity size={20} />;
+  }
+};
+
+interface StatsWidgetProps {
+  data: {
+    label1: string; value1: string; unit1: string; icon1: string;
+    label2: string; value2: string; unit2: string; icon2: string;
+  };
+  isEditMode?: boolean;
+  onDelete?: () => void;
+}
+
+export default function StatsWidget({ data, isEditMode = false, onDelete }: StatsWidgetProps) {
+  const safeData = data || {
+    label1: "-", value1: "0", unit1: "", icon1: "activity",
+    label2: "-", value2: "0", unit2: "", icon2: "activity"
+  };
+
+  return (
+    <div className={cn(
+      "bg-white border border-gray-100 shadow-sm flex flex-col h-full relative overflow-hidden p-6 rounded-2xl justify-center"
+    )}>
+      
+      <div className="absolute top-0 left-0 w-full h-1 bg-yellow-500"></div>
+
+      {isEditMode && onDelete && (
+        <button 
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="absolute top-6 right-6 z-50 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center shadow-md hover:bg-red-600 hover:scale-110 transition-all animate-in zoom-in duration-200"
+            title="Supprimer"
+        >
+            <Minus size={16} strokeWidth={4} />
+        </button>
+      )}
+
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-green-600 shrink-0">
+            {getIcon(safeData.icon1)}
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">
+              {safeData.value1}<span className="text-sm ml-0.5 align-baseline">{safeData.unit1}</span>
+            </p>
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">{safeData.label1}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 shrink-0">
+            {getIcon(safeData.icon2)}
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-900">
+              {safeData.value2}<span className="text-sm ml-0.5 align-baseline">{safeData.unit2}</span>
+            </p>
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">{safeData.label2}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\components\sos\ContactCard.tsx
+==========================================
+import { Phone, LucideIcon } from 'lucide-react';
+
+interface ContactCardProps {
+  label: string;
+  subLabel?: string;
+  phoneNumber: string;
+  icon: LucideIcon;
+  variant?: 'danger' | 'primary' | 'default';
+}
+
+export default function ContactCard({ 
+  label, 
+  subLabel, 
+  phoneNumber, 
+  icon: Icon, 
+  variant = 'default' 
+}: ContactCardProps) {
+  
+  // Configuration des styles selon l'urgence
+  const styles = {
+    danger: {
+      container: "bg-red-50 border-red-200 hover:bg-red-100",
+      iconBox: "bg-red-100 text-red-600",
+      text: "text-red-900",
+      subText: "text-red-700/80",
+      button: "bg-red-600 text-white"
+    },
+    primary: {
+      container: "bg-gold/5 border-gold/30 hover:bg-gold/10",
+      iconBox: "bg-gold/20 text-gold-dark",
+      text: "text-gray-900",
+      subText: "text-gray-600",
+      button: "bg-gold text-white"
+    },
+    default: {
+      container: "bg-white border-gray-100 hover:bg-gray-50",
+      iconBox: "bg-gray-100 text-gray-500",
+      text: "text-gray-900",
+      subText: "text-gray-500",
+      button: "bg-gray-900 text-white"
+    }
+  };
+
+  const currentStyle = styles[variant];
+
+  return (
+    <a 
+      href={`tel:${phoneNumber}`}
+      className={`
+        flex items-center gap-4 p-4 rounded-xl border transition-all duration-200 group shadow-sm hover:shadow-md
+        ${currentStyle.container}
+      `}
+    >
+      {/* IcÃ´ne */}
+      <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${currentStyle.iconBox}`}>
+        <Icon size={24} strokeWidth={2} />
+      </div>
+
+      {/* Texte */}
+      <div className="flex-1 min-w-0">
+        <h3 className={`font-bold text-lg truncate ${currentStyle.text}`}>
+          {label}
+        </h3>
+        {subLabel && (
+          <p className={`text-sm truncate ${currentStyle.subText}`}>
+            {subLabel}
+          </p>
+        )}
+        <p className="text-xs font-mono opacity-70 mt-1">{phoneNumber}</p>
+      </div>
+
+      {/* Bouton d'appel */}
+      <div className={`
+        w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110
+        ${currentStyle.button}
+      `}>
+        <Phone size={18} fill="currentColor" />
+      </div>
+    </a>
+  );
 }
 
 ==========================================
@@ -2355,13 +3943,17 @@ export async function forgotPasswordAction(data: ForgotPasswordFormValues): Prom
   const validated = forgotPasswordSchema.safeParse(data);
   if (!validated.success) return { success: false, error: "Email invalide" };
 
+  const origin = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+
+  // âœ… CORRECTION : On redirige vers le callback pour crÃ©er la session AVANT d'aller sur la page reset
   const { error } = await supabase.auth.resetPasswordForEmail(validated.data.email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/reset-password`,
+    redirectTo: `${origin}/auth/callback?next=/reset-password`,
   })
 
   if (error) {
     console.error("Reset password error:", error);
-    return { success: false, error: "Impossible d'envoyer l'email." };
+    // On retourne true par sÃ©curitÃ© mÃªme si erreur (pour ne pas leaker les emails)
+    return { success: true };
   }
 
   return { success: true }
@@ -2378,10 +3970,365 @@ export async function resetPasswordAction(data: ResetPasswordFormValues): Promis
   })
 
   if (error) {
-    return { success: false, error: error.message }
+    console.error("Update password error:", error.message);
+
+    // 1. Gestion spÃ©cifique : Mot de passe identique
+    if (error.message.includes("different from the old password")) {
+      return { success: false, error: "Le nouveau mot de passe doit Ãªtre diffÃ©rent de l'ancien." };
+    }
+    
+    // 2. Gestion spÃ©cifique : Mot de passe trop court (sÃ©curitÃ© doublÃ©e)
+    if (error.message.includes("password should be at least")) {
+       return { success: false, error: "Le mot de passe est trop court." };
+    }
+
+    // 3. Erreur gÃ©nÃ©rique
+    return { success: false, error: "Une erreur est survenue lors de la modification." };
   }
 
   return { success: true }
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\lib\actions\calendar-actions.ts
+==========================================
+'use server'
+
+import { createClient } from '@/lib/supabase/server';
+
+export async function getMonthPledges(year: number, month: number) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) return [];
+
+  // Calcul des bornes du mois (DÃ©but -> Fin)
+  // Note: month est 0-indexÃ© en JS (0=Jan), mais 1-indexÃ© souvent en SQL. 
+  // Ici on construit des dates ISO strings pour comparer.
+  
+  const startDate = new Date(year, month, 1).toISOString().split('T')[0];
+  const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+
+  const { data, error } = await supabase
+    .from('daily_pledges')
+    .select('pledge_date')
+    .eq('user_id', user.id)
+    .gte('pledge_date', startDate)
+    .lte('pledge_date', endDate);
+
+  if (error) {
+    console.error("Erreur calendrier:", error);
+    return [];
+  }
+
+  // On retourne juste un tableau de strings ["2023-12-01", "2023-12-02", ...]
+  return data.map(row => row.pledge_date);
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\lib\actions\dashboard-actions.ts
+==========================================
+"use server";
+
+import { createClient } from "@/lib/supabase/server";
+
+// DÃ©finition des interfaces
+interface AddictionTypeData {
+  name: string;
+  icon: string | null;
+}
+
+interface DashboardProfile {
+  first_name: string | null;
+  sobriety_start_date: string | null;
+  daily_value_1: number | null;
+  daily_value_2: number | null;
+  addiction_types: AddictionTypeData | null; 
+}
+
+interface Pledge {
+  pledge_date: string;
+}
+
+export async function getDashboardData() {
+  const supabase = await createClient();
+  
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Non autorisÃ©");
+
+  // RÃ©cupÃ©ration Profil + Type d'addiction
+  const { data: profileData, error } = await supabase
+    .from('user_profiles')
+    .select(`
+      first_name,
+      sobriety_start_date,
+      daily_value_1,
+      daily_value_2,
+      addiction_types (
+        name,
+        icon
+      )
+    `)
+    .eq('user_id', user.id)
+    .single();
+
+  if (error || !profileData) {
+    // Redirection soft si pas de profil (Ã©vite le crash)
+    return {
+       userFirstName: "InvitÃ©",
+       daysSober: 0,
+       hasPledgedToday: false,
+       monthPledges: [],
+       currentPhase: "Onboarding",
+       nextMilestone: { label: "DÃ©part", progress: 0, daysLeft: 1 },
+       stats: { label1: "-", value1: "0", unit1: "", icon1: "activity", label2: "-", value2: "0", unit2: "", icon2: "activity" }
+    };
+  }
+
+  const profile = profileData as unknown as DashboardProfile;
+
+  // RÃ©cupÃ©ration Engagements
+  const { data: pledgesData } = await supabase
+    .from('daily_pledges')
+    .select('pledge_date')
+    .eq('user_id', user.id);
+
+  const pledges: Pledge[] = pledgesData || [];
+
+  // --- 1. Calcul Jours Sobres (BasÃ© sur la date) ---
+  let daysSober = 0;
+  if (profile.sobriety_start_date) {
+    const start = new Date(profile.sobriety_start_date);
+    const now = new Date();
+    start.setHours(0, 0, 0, 0);
+    now.setHours(0, 0, 0, 0);
+    const diffTime = now.getTime() - start.getTime();
+    daysSober = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    // Si la date est aujourd'hui, on peut dire 0 ou 1 selon votre prÃ©fÃ©rence.
+    // Ici on met max(0) pour Ã©viter les nÃ©gatifs.
+    daysSober = Math.max(0, daysSober); 
+  }
+
+  // --- 2. Infos Pledges ---
+  const todayStr = new Date().toLocaleDateString('en-CA');
+  const hasPledgedToday = pledges.some((p) => p.pledge_date === todayStr);
+
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+  const monthPledges = pledges
+    .filter((p) => {
+      const d = new Date(p.pledge_date);
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    })
+    .map((p) => p.pledge_date);
+
+  // --- 3. Stats Dynamiques ---
+  const v1 = profile.daily_value_1 || 0; 
+  const v2 = profile.daily_value_2 || 0; 
+  
+  // Normalisation du nom pour la dÃ©tection (Majuscules, sans accents si possible)
+  const addictionName = profile.addiction_types?.name || 'ALCOHOL';
+  const norm = addictionName.toUpperCase();
+
+  let statsData = {
+    label1: "Ã‰conomies", value1: "0", unit1: "â‚¬", icon1: "wallet",
+    label2: "SantÃ©", value2: "0", unit2: "kcal", icon2: "activity"
+  };
+
+  // LOGIQUE DE DÃ‰TECTION ROBUSTE
+  if (norm.includes('TABAC') || norm.includes('CIGARETTE') || norm.includes('TOBACCO')) {
+      // TABAC : v1 = Prix Paquet (20 cigs), v2 = Cigs/jour
+      // CoÃ»t = (Jours * CigsParJour / 20) * PrixPaquet
+      const cost = (daysSober * v2 / 20) * v1;
+      
+      // Vie gagnÃ©e : 1 cig = 11 minutes
+      const minutesGained = daysSober * v2 * 11;
+      const hoursGained = Math.floor(minutesGained / 60);
+
+      statsData = {
+        label1: "Ã‰conomies",
+        value1: cost.toFixed(0),
+        unit1: "â‚¬",
+        icon1: "wallet",
+        label2: "Vie gagnÃ©e",
+        value2: hoursGained.toString(),
+        unit2: "h",
+        icon2: "hourglass"
+      };
+  } 
+  else if (norm.includes('PORNO') || norm.includes('SEX')) {
+      // PORN : v1 = Heures/jour perdues
+      const hoursSaved = daysSober * v1;
+      
+      statsData = {
+        label1: "Temps gagnÃ©",
+        value1: hoursSaved.toFixed(0),
+        unit1: "h",
+        icon1: "clock",
+        label2: "Confiance",
+        value2: "+" + (daysSober * 1.5).toFixed(0), // Arbitraire : +1.5% par jour
+        unit2: "%",
+        icon2: "brain"
+      };
+  } 
+  else if (norm.includes('SOCIAL') || norm.includes('ECRAN') || norm.includes('RESEAU') || norm.includes('MEDIA')) {
+      // RESEAUX : v1 = Heures/jour
+      statsData = {
+        label1: "Temps Ã©cran",
+        value1: (daysSober * v1).toFixed(0),
+        unit1: "h Ã©vitÃ©es",
+        icon1: "smartphone-off",
+        label2: "ProductivitÃ©",
+        value2: (daysSober * (v1 * 0.5)).toFixed(0), // On assume 50% du temps rÃ©cupÃ©rÃ© est productif
+        unit2: "h gagnÃ©es",
+        icon2: "zap"
+      };
+  } 
+  else {
+      // DÃ‰FAUT (ALCOOL, DROGUE, ETC.)
+      // v1 = CoÃ»t/jour, v2 = Calories/jour
+      statsData = {
+        label1: "Ã‰conomies",
+        value1: (daysSober * v1).toFixed(0),
+        unit1: "â‚¬",
+        icon1: "wallet",
+        label2: "SantÃ©",
+        value2: (daysSober * v2).toFixed(0),
+        unit2: "kcal",
+        icon2: "activity"
+      };
+  }
+
+  return {
+    userFirstName: profile.first_name || "Utilisateur",
+    daysSober,
+    hasPledgedToday,
+    monthPledges,
+    currentPhase: "Phase 1",
+    nextMilestone: { label: "30 Jours", progress: Math.min(100, (daysSober / 30) * 100), daysLeft: Math.max(0, 30 - daysSober) },
+    stats: statsData
+  };
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\lib\actions\journal-actions.ts
+==========================================
+"use server";
+
+import { createClient } from "@/lib/supabase/server";
+import { revalidatePath } from "next/cache";
+import { SupabaseClient } from "@supabase/supabase-js";
+
+export type JournalEntry = {
+  mood: string;
+  content: string;
+};
+
+export interface MoodHistoryItem {
+  day: string;
+  mood: string | null;
+}
+
+// Interface pour typer les donnÃ©es brutes de la base
+interface RawJournalData {
+  journal_date: string;
+  mood: string;
+}
+
+// Sauvegarder (ou mettre Ã  jour) le journal du jour
+export async function saveJournalEntry(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  if (!user) return { success: false, error: "Non connectÃ©" };
+
+  const mood = formData.get("mood") as string;
+  const content = formData.get("content") as string;
+  const today = new Date().toLocaleDateString('en-CA'); // Format YYYY-MM-DD
+
+  if (!mood) return { success: false, error: "Humeur requise" };
+
+  // Utilisation de SupabaseClient pour Ã©viter l'erreur de table manquante dans le type global
+  const client = supabase as SupabaseClient;
+
+  const { error } = await client
+    .from('user_journals')
+    .upsert({
+      user_id: user.id,
+      journal_date: today,
+      mood,
+      content,
+      updated_at: new Date().toISOString()
+    });
+
+  if (error) {
+    console.error("Journal Error:", error);
+    return { success: false, error: "Erreur de sauvegarde" };
+  }
+
+  revalidatePath('/dashboard');
+  revalidatePath('/stats');
+  revalidatePath('/journal');
+  
+  return { success: true };
+}
+
+// RÃ©cupÃ©rer l'entrÃ©e d'aujourd'hui
+export async function getTodayJournal() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const today = new Date().toLocaleDateString('en-CA');
+  const client = supabase as SupabaseClient;
+
+  const { data } = await client
+    .from('user_journals')
+    .select('mood, content')
+    .eq('user_id', user.id)
+    .eq('journal_date', today)
+    .maybeSingle();
+
+  return data as { mood: string; content: string | null } | null;
+}
+
+// RÃ©cupÃ©rer les 7 derniers jours pour les STATS
+export async function getLast7DaysMoods(): Promise<MoodHistoryItem[]> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const today = new Date();
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(today.getDate() - 6);
+
+  const client = supabase as SupabaseClient;
+
+  const { data } = await client
+    .from('user_journals')
+    .select('journal_date, mood')
+    .eq('user_id', user.id)
+    .gte('journal_date', sevenDaysAgo.toLocaleDateString('en-CA'))
+    .order('journal_date', { ascending: true });
+
+  const result: MoodHistoryItem[] = [];
+  const entries = (data as RawJournalData[]) || [];
+  
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(today.getDate() - i);
+    const dateStr = d.toLocaleDateString('fr-FR', { weekday: 'short' });
+    const sqlDate = d.toLocaleDateString('en-CA');
+    
+    const found = entries.find((item) => item.journal_date === sqlDate);
+    
+    result.push({
+      day: dateStr,
+      mood: found ? found.mood : null
+    });
+  }
+
+  return result;
 }
 
 ==========================================
@@ -2401,7 +4348,7 @@ export type OnboardingResponse = {
 export async function completeOnboardingAction(data: OnboardingFormValues): Promise<OnboardingResponse> {
   const supabase = await createClient();
   
-  // 1. Validation des donnÃ©es cÃ´tÃ© serveur
+  // 1. Validation des donnÃ©es
   const validated = onboardingSchema.safeParse(data);
   if (!validated.success) {
     return { success: false, error: "DonnÃ©es invalides." };
@@ -2409,37 +4356,51 @@ export async function completeOnboardingAction(data: OnboardingFormValues): Prom
   
   const values = validated.data;
 
-  // 2. VÃ©rifier l'utilisateur connectÃ©
+  // 2. VÃ©rifier User
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) {
     return { success: false, error: "Session expirÃ©e. Veuillez vous reconnecter." };
   }
 
-  // 3. Sauvegarder les donnÃ©es
   try {
+    // 3. PrÃ©paration des donnÃ©es
+
     // Nettoyage des tÃ©lÃ©phones pasteurs (retirer les entrÃ©es vides)
     const cleanPastorPhones = values.pastorPhones 
       ? values.pastorPhones.filter(p => p && p.trim().length > 0)
       : null;
 
-    // Pour la compatibilitÃ© avec l'ancienne colonne 'pastor_phone' (singulier), on prend le premier numÃ©ro
+    // Pour rÃ©tro-compatibilitÃ© (premier numÃ©ro)
     const primaryPastorPhone = cleanPastorPhones && cleanPastorPhones.length > 0 
       ? cleanPastorPhones[0] 
       : null;
 
-    // 4. Mettre Ã  jour le profil (user_profiles)
+    // âœ… CRUCIAL : On rassemble toutes les habitudes dans un objet JSON pour la colonne 'habits'
+    const habitsData = {
+      emotional_triggers: values.emotionalTriggers || [],
+      context_habits: values.contextHabits || [],
+      specific_behaviors: values.specificBehaviors || []
+    };
+
+    // 4. Update User Profile
     const { error: profileError } = await supabase
       .from('user_profiles')
       .update({
-        emergency_contact_phone: values.emergencyContactPhone,
+        // âœ… ENREGISTREMENT DE L'ADDICTION ET DE LA DATE
+        addiction_type_id: values.addictionTypeId,
+        sobriety_start_date: values.sobrietyStartDate, 
         
-        // On sauvegarde le tableau complet
+        // âœ… ENREGISTREMENT DES HABITUDES (JSON)
+        habits: habitsData,
+
+        // Contacts
+        emergency_contact_phone: values.emergencyContactPhone || null,
         pastor_phones: cleanPastorPhones,
-        // On sauvegarde le premier pour compatibilitÃ©
         pastor_phone: primaryPastorPhone,
-        
         doctor_phone: values.doctorPhone || null,
-        is_onboarded: true, // Marqueur crucial
+        
+        // Validation du statut
+        is_onboarded: true, 
         updated_at: new Date().toISOString(),
       })
       .eq('user_id', user.id);
@@ -2455,6 +4416,108 @@ export async function completeOnboardingAction(data: OnboardingFormValues): Prom
   } catch (error) {
     console.error("Erreur serveur onboarding:", error);
     return { success: false, error: "Une erreur interne est survenue." };
+  }
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\lib\actions\pledge-actions.ts
+==========================================
+'use server'
+
+import { createClient } from '@/lib/supabase/server';
+import { revalidatePath } from 'next/cache';
+
+export async function getDailyPledgeStatus() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return false;
+
+  const today = new Date().toISOString().split('T')[0];
+  const { data } = await supabase
+    .from('daily_pledges')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('pledge_date', today)
+    .maybeSingle();
+
+  return !!data;
+}
+
+export async function submitDailyPledge() {
+  console.log("âš¡ ACTION SERVEUR REÃ‡UE : submitDailyPledge"); // Regardez le terminal VSCode
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    console.log("âŒ Erreur : Pas d'utilisateur connectÃ©");
+    return { success: false, error: "Utilisateur non connectÃ©" };
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  console.log(`ðŸ“ Tentative d'insertion pour User ${user.id} Ã  la date ${today}`);
+
+  const { error } = await supabase
+    .from('daily_pledges')
+    .insert({
+      user_id: user.id,
+      pledge_date: today
+    });
+
+  if (error) {
+    // Si c'est un doublon, c'est OK
+    if (error.code === '23505') {
+        console.log("âš ï¸ DÃ©jÃ  fait aujourd'hui (Doublon)");
+        return { success: true };
+    }
+    
+    console.error("âŒ ERREUR SQL SUPABASE :", error); // TRÃˆS IMPORTANT
+    return { success: false, error: error.message || "Erreur base de donnÃ©es" };
+  }
+
+  console.log("âœ… SUCCÃˆS : Insertion rÃ©ussie");
+  revalidatePath('/dashboard');
+  return { success: true };
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\lib\actions\settings-actions.ts
+==========================================
+"use server";
+
+import { createClient } from "@/lib/supabase/server";
+import { revalidatePath } from "next/cache";
+
+export async function updateConsumptionSettings(formData: FormData) {
+  const supabase = await createClient();
+  
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Non autorisÃ©" };
+
+  const dailyValue1 = parseFloat(formData.get("dailyValue1") as string) || 0;
+  const dailyValue2 = parseFloat(formData.get("dailyValue2") as string) || 0;
+
+  try {
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({
+        daily_value_1: dailyValue1,
+        daily_value_2: dailyValue2,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', user.id);
+
+    if (error) throw error;
+
+    // On rafraÃ®chit le dashboard pour que les calculs se mettent Ã  jour instantanÃ©ment
+    revalidatePath('/dashboard');
+    revalidatePath('/stats');
+    revalidatePath('/consumption');
+
+    return { success: true };
+  } catch (error) {
+    console.error("Erreur update consumption:", error);
+    return { success: false, error: "Erreur lors de la mise Ã  jour." };
   }
 }
 
@@ -2536,6 +4599,34 @@ import {
       { id: 'regret', label: 'CulpabilitÃ© immÃ©diate', icon: Frown },
     ]
   };
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\lib\constants\moods.ts
+==========================================
+import { Laugh, Smile, Meh, Angry, LucideIcon } from "lucide-react";
+
+export type MoodKey = 'happy' | 'calm' | 'neutral' | 'anxious' | 'angry';
+
+export interface MoodConfig {
+  id: MoodKey;
+  icon: LucideIcon;
+  color: string;
+  bg: string;
+  label: string;
+}
+
+export const MOODS: MoodConfig[] = [
+  { id: 'happy', icon: Laugh, color: 'text-green-500', bg: 'bg-green-50', label: 'Joyeux' },
+  { id: 'calm', icon: Smile, color: 'text-emerald-400', bg: 'bg-emerald-50', label: 'Calme' },
+  { id: 'neutral', icon: Meh, color: 'text-blue-400', bg: 'bg-blue-50', label: 'Neutre' },
+  { id: 'anxious', icon: Grimace, color: 'text-orange-400', bg: 'bg-orange-50', label: 'Anxieux' },
+  { id: 'angry', icon: Angry, color: 'text-red-500', bg: 'bg-red-50', label: 'ColÃ©reux' },
+];
+
+export const MOOD_MAP = MOODS.reduce((acc, mood) => {
+  acc[mood.id] = mood;
+  return acc;
+}, {} as Record<string, MoodConfig>);
 
 ==========================================
 FICHIER: C:\Users\gegem\free-indeed\lib\errors\mapping.ts
@@ -2880,6 +4971,27 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_pledges: {
+        Row: {
+          created_at: string | null
+          id: string
+          pledge_date: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          pledge_date?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          pledge_date?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       relapses: {
         Row: {
           created_at: string | null
@@ -2953,54 +5065,111 @@ export type Database = {
           },
         ]
       }
+      user_journals: {
+        Row: {
+          content: string | null
+          created_at: string | null
+          id: string
+          journal_date: string
+          mood: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string | null
+          id?: string
+          journal_date: string
+          mood: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          content?: string | null
+          created_at?: string | null
+          id?: string
+          journal_date?: string
+          mood?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_profiles: {
         Row: {
           addiction_type_id: string | null
+          birth_date: string | null
           can_change_addiction_after: string | null
           created_at: string | null
+          daily_value_1: number | null
+          daily_value_2: number | null
           doctor_phone: string | null
+          email: string | null
           emergency_contact_phone: string | null
+          first_name: string | null
+          gender: string | null
           habits: Json | null
           id: string
           is_onboarded: boolean | null
+          last_name: string | null
           pastor_phone: string | null
           pastor_phones: string[] | null
+          phone_number: string | null
           sobriety_days_at_change: number | null
           sobriety_start_date: string | null
           updated_at: string | null
           user_id: string | null
+          username: string | null
         }
         Insert: {
           addiction_type_id?: string | null
+          birth_date?: string | null
           can_change_addiction_after?: string | null
           created_at?: string | null
+          daily_value_1?: number | null
+          daily_value_2?: number | null
           doctor_phone?: string | null
+          email?: string | null
           emergency_contact_phone?: string | null
+          first_name?: string | null
+          gender?: string | null
           habits?: Json | null
           id?: string
           is_onboarded?: boolean | null
+          last_name?: string | null
           pastor_phone?: string | null
           pastor_phones?: string[] | null
+          phone_number?: string | null
           sobriety_days_at_change?: number | null
           sobriety_start_date?: string | null
           updated_at?: string | null
           user_id?: string | null
+          username?: string | null
         }
         Update: {
           addiction_type_id?: string | null
+          birth_date?: string | null
           can_change_addiction_after?: string | null
           created_at?: string | null
+          daily_value_1?: number | null
+          daily_value_2?: number | null
           doctor_phone?: string | null
+          email?: string | null
           emergency_contact_phone?: string | null
+          first_name?: string | null
+          gender?: string | null
           habits?: Json | null
           id?: string
           is_onboarded?: boolean | null
+          last_name?: string | null
           pastor_phone?: string | null
           pastor_phones?: string[] | null
+          phone_number?: string | null
           sobriety_days_at_change?: number | null
           sobriety_start_date?: string | null
           updated_at?: string | null
           user_id?: string | null
+          username?: string | null
         }
         Relationships: [
           {
@@ -3008,13 +5177,6 @@ export type Database = {
             columns: ["addiction_type_id"]
             isOneToOne: false
             referencedRelation: "addiction_types"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "user_profiles_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: true
-            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -3336,126 +5498,8 @@ export type Json =
   | Json[]
 
 export interface Database {
-  auth: {
-    Tables: {
-      users: {
-        Row: {
-          instance_id: string | null
-          id: string
-          aud: string | null
-          role: string | null
-          email: string | null
-          encrypted_password: string | null
-          email_confirmed_at: string | null
-          invited_at: string | null
-          confirmation_token: string | null
-          confirmation_sent_at: string | null
-          recovery_token: string | null
-          recovery_sent_at: string | null
-          email_change_token_new: string | null
-          email_change: string | null
-          email_change_sent_at: string | null
-          last_sign_in_at: string | null
-          raw_app_meta_data: Json | null
-          raw_user_meta_data: Json | null
-          is_super_admin: boolean | null
-          created_at: string | null
-          updated_at: string | null
-          phone: string | null
-          phone_confirmed_at: string | null
-          phone_change: string | null
-          phone_change_token: string | null
-          phone_change_sent_at: string | null
-          confirmed_at: string | null
-          email_change_token_current: string | null
-          email_change_confirm_status: number | null
-          banned_until: string | null
-          reauthentication_token: string | null
-          reauthentication_sent_at: string | null
-          is_sso_user: boolean
-          deleted_at: string | null
-          is_anonymous: boolean
-        }
-        Insert: {
-          instance_id?: string | null
-          id: string
-          aud?: string | null
-          role?: string | null
-          email?: string | null
-          encrypted_password?: string | null
-          email_confirmed_at?: string | null
-          invited_at?: string | null
-          confirmation_token?: string | null
-          confirmation_sent_at?: string | null
-          recovery_token?: string | null
-          recovery_sent_at?: string | null
-          email_change_token_new?: string | null
-          email_change?: string | null
-          email_change_sent_at?: string | null
-          last_sign_in_at?: string | null
-          raw_app_meta_data?: Json | null
-          raw_user_meta_data?: Json | null
-          is_super_admin?: boolean | null
-          created_at?: string | null
-          updated_at?: string | null
-          phone?: string | null
-          phone_confirmed_at?: string | null
-          phone_change?: string | null
-          phone_change_token?: string | null
-          phone_change_sent_at?: string | null
-          confirmed_at?: string | null
-          email_change_token_current?: string | null
-          email_change_confirm_status?: number | null
-          banned_until?: string | null
-          reauthentication_token?: string | null
-          reauthentication_sent_at?: string | null
-          is_sso_user?: boolean
-          deleted_at?: string | null
-          is_anonymous?: boolean
-        }
-        Update: {
-          instance_id?: string | null
-          id?: string
-          aud?: string | null
-          role?: string | null
-          email?: string | null
-          encrypted_password?: string | null
-          email_confirmed_at?: string | null
-          invited_at?: string | null
-          confirmation_token?: string | null
-          confirmation_sent_at?: string | null
-          recovery_token?: string | null
-          recovery_sent_at?: string | null
-          email_change_token_new?: string | null
-          email_change?: string | null
-          email_change_sent_at?: string | null
-          last_sign_in_at?: string | null
-          raw_app_meta_data?: Json | null
-          raw_user_meta_data?: Json | null
-          is_super_admin?: boolean | null
-          created_at?: string | null
-          updated_at?: string | null
-          phone?: string | null
-          phone_confirmed_at?: string | null
-          phone_change?: string | null
-          phone_change_token?: string | null
-          phone_change_sent_at?: string | null
-          confirmed_at?: string | null
-          email_change_token_current?: string | null
-          email_change_confirm_status?: number | null
-          banned_until?: string | null
-          reauthentication_token?: string | null
-          reauthentication_sent_at?: string | null
-          is_sso_user?: boolean
-          deleted_at?: string | null
-          is_anonymous?: boolean
-        }
-      }
-    }
-  }
   public: {
     Tables: {
-      // âœ… TABLE AJOUTÃ‰E : user_profiles (Essentiel pour votre code)
       user_profiles: {
         Row: {
           id: string
@@ -3469,14 +5513,15 @@ export interface Database {
           birth_date: string | null
           avatar_url: string | null
           
-          // Champs Onboarding
           addiction_type_id: string | null
           sobriety_start_date: string | null
           emergency_contact_phone: string | null
           pastor_phone: string | null
           doctor_phone: string | null
           
-          // âœ… AJOUT : La colonne habits
+          // âœ… COLONNES AJOUTÃ‰ES
+          daily_value_1: number | null
+          daily_value_2: number | null
           habits: Json | null
           
           is_onboarded: boolean
@@ -3501,7 +5546,9 @@ export interface Database {
           pastor_phone?: string | null
           doctor_phone?: string | null
           
-          // âœ… AJOUT
+          // âœ… COLONNES AJOUTÃ‰ES
+          daily_value_1?: number | null
+          daily_value_2?: number | null
           habits?: Json | null
           
           is_onboarded?: boolean
@@ -3526,16 +5573,109 @@ export interface Database {
           pastor_phone?: string | null
           doctor_phone?: string | null
           
-          // âœ… AJOUT
+          // âœ… COLONNES AJOUTÃ‰ES
+          daily_value_1?: number | null
+          daily_value_2?: number | null
           habits?: Json | null
           
           is_onboarded?: boolean
           created_at?: string
           updated_at?: string | null
         }
+        Relationships: [
+          {
+            foreignKeyName: "user_profiles_addiction_type_id_fkey"
+            columns: ["addiction_type_id"]
+            isOneToOne: false
+            referencedRelation: "addiction_types"
+            referencedColumns: ["id"]
+          }
+        ]
       }
-      
-      // Votre table 'users' existante (probablement moins utilisÃ©e maintenant)
+      user_journals: {
+        Row: {
+          id: string
+          user_id: string
+          journal_date: string
+          mood: string
+          content: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          journal_date: string
+          mood: string
+          content?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          journal_date?: string
+          mood?: string
+          content?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      addiction_types: {
+        Row: {
+          id: string
+          name: string
+          icon: string | null
+          color: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          icon?: string | null
+          color?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          icon?: string | null
+          color?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+
+      daily_pledges: {
+        Row: {
+          id: string
+          user_id: string
+          pledge_date: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          pledge_date: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          pledge_date?: string
+          created_at?: string
+        }
+        Relationships: [
+            {
+                foreignKeyName: "daily_pledges_user_id_fkey"
+                columns: ["user_id"]
+                isOneToOne: false
+                referencedRelation: "users"
+                referencedColumns: ["id"]
+              }
+        ]
+      }
+
       users: {
         Row: {
           id: string
@@ -3561,31 +5701,7 @@ export interface Database {
           created_at?: string
           updated_at?: string | null
         }
-      }
-      
-      // âœ… TABLE AJOUTÃ‰E : addiction_types (Utile pour les types)
-      addiction_types: {
-        Row: {
-          id: string
-          name: string
-          icon: string | null
-          color: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          icon?: string | null
-          color?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          icon?: string | null
-          color?: string | null
-          created_at?: string
-        }
+        Relationships: []
       }
     }
     Views: {
@@ -3595,6 +5711,9 @@ export interface Database {
       [_: string]: never
     }
     Enums: {
+      [_: string]: never
+    }
+    CompositeTypes: {
       [_: string]: never
     }
   }

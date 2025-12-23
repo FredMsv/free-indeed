@@ -160,12 +160,44 @@ export type Database = {
           },
         ]
       }
+      user_journals: {
+        Row: {
+          content: string | null
+          created_at: string | null
+          id: string
+          journal_date: string
+          mood: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string | null
+          id?: string
+          journal_date: string
+          mood: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          content?: string | null
+          created_at?: string | null
+          id?: string
+          journal_date?: string
+          mood?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_profiles: {
         Row: {
           addiction_type_id: string | null
           birth_date: string | null
           can_change_addiction_after: string | null
           created_at: string | null
+          daily_value_1: number | null
+          daily_value_2: number | null
           doctor_phone: string | null
           email: string | null
           emergency_contact_phone: string | null
@@ -189,6 +221,8 @@ export type Database = {
           birth_date?: string | null
           can_change_addiction_after?: string | null
           created_at?: string | null
+          daily_value_1?: number | null
+          daily_value_2?: number | null
           doctor_phone?: string | null
           email?: string | null
           emergency_contact_phone?: string | null
@@ -212,6 +246,8 @@ export type Database = {
           birth_date?: string | null
           can_change_addiction_after?: string | null
           created_at?: string | null
+          daily_value_1?: number | null
+          daily_value_2?: number | null
           doctor_phone?: string | null
           email?: string | null
           emergency_contact_phone?: string | null

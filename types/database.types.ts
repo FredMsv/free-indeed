@@ -7,126 +7,8 @@ export type Json =
   | Json[]
 
 export interface Database {
-  auth: {
-    Tables: {
-      users: {
-        Row: {
-          instance_id: string | null
-          id: string
-          aud: string | null
-          role: string | null
-          email: string | null
-          encrypted_password: string | null
-          email_confirmed_at: string | null
-          invited_at: string | null
-          confirmation_token: string | null
-          confirmation_sent_at: string | null
-          recovery_token: string | null
-          recovery_sent_at: string | null
-          email_change_token_new: string | null
-          email_change: string | null
-          email_change_sent_at: string | null
-          last_sign_in_at: string | null
-          raw_app_meta_data: Json | null
-          raw_user_meta_data: Json | null
-          is_super_admin: boolean | null
-          created_at: string | null
-          updated_at: string | null
-          phone: string | null
-          phone_confirmed_at: string | null
-          phone_change: string | null
-          phone_change_token: string | null
-          phone_change_sent_at: string | null
-          confirmed_at: string | null
-          email_change_token_current: string | null
-          email_change_confirm_status: number | null
-          banned_until: string | null
-          reauthentication_token: string | null
-          reauthentication_sent_at: string | null
-          is_sso_user: boolean
-          deleted_at: string | null
-          is_anonymous: boolean
-        }
-        Insert: {
-          instance_id?: string | null
-          id: string
-          aud?: string | null
-          role?: string | null
-          email?: string | null
-          encrypted_password?: string | null
-          email_confirmed_at?: string | null
-          invited_at?: string | null
-          confirmation_token?: string | null
-          confirmation_sent_at?: string | null
-          recovery_token?: string | null
-          recovery_sent_at?: string | null
-          email_change_token_new?: string | null
-          email_change?: string | null
-          email_change_sent_at?: string | null
-          last_sign_in_at?: string | null
-          raw_app_meta_data?: Json | null
-          raw_user_meta_data?: Json | null
-          is_super_admin?: boolean | null
-          created_at?: string | null
-          updated_at?: string | null
-          phone?: string | null
-          phone_confirmed_at?: string | null
-          phone_change?: string | null
-          phone_change_token?: string | null
-          phone_change_sent_at?: string | null
-          confirmed_at?: string | null
-          email_change_token_current?: string | null
-          email_change_confirm_status?: number | null
-          banned_until?: string | null
-          reauthentication_token?: string | null
-          reauthentication_sent_at?: string | null
-          is_sso_user?: boolean
-          deleted_at?: string | null
-          is_anonymous?: boolean
-        }
-        Update: {
-          instance_id?: string | null
-          id?: string
-          aud?: string | null
-          role?: string | null
-          email?: string | null
-          encrypted_password?: string | null
-          email_confirmed_at?: string | null
-          invited_at?: string | null
-          confirmation_token?: string | null
-          confirmation_sent_at?: string | null
-          recovery_token?: string | null
-          recovery_sent_at?: string | null
-          email_change_token_new?: string | null
-          email_change?: string | null
-          email_change_sent_at?: string | null
-          last_sign_in_at?: string | null
-          raw_app_meta_data?: Json | null
-          raw_user_meta_data?: Json | null
-          is_super_admin?: boolean | null
-          created_at?: string | null
-          updated_at?: string | null
-          phone?: string | null
-          phone_confirmed_at?: string | null
-          phone_change?: string | null
-          phone_change_token?: string | null
-          phone_change_sent_at?: string | null
-          confirmed_at?: string | null
-          email_change_token_current?: string | null
-          email_change_confirm_status?: number | null
-          banned_until?: string | null
-          reauthentication_token?: string | null
-          reauthentication_sent_at?: string | null
-          is_sso_user?: boolean
-          deleted_at?: string | null
-          is_anonymous?: boolean
-        }
-      }
-    }
-  }
   public: {
     Tables: {
-      // ✅ TABLE AJOUTÉE : user_profiles (Essentiel pour votre code)
       user_profiles: {
         Row: {
           id: string
@@ -140,14 +22,15 @@ export interface Database {
           birth_date: string | null
           avatar_url: string | null
           
-          // Champs Onboarding
           addiction_type_id: string | null
           sobriety_start_date: string | null
           emergency_contact_phone: string | null
           pastor_phone: string | null
           doctor_phone: string | null
           
-          // ✅ AJOUT : La colonne habits
+          // ✅ COLONNES AJOUTÉES
+          daily_value_1: number | null
+          daily_value_2: number | null
           habits: Json | null
           
           is_onboarded: boolean
@@ -172,7 +55,9 @@ export interface Database {
           pastor_phone?: string | null
           doctor_phone?: string | null
           
-          // ✅ AJOUT
+          // ✅ COLONNES AJOUTÉES
+          daily_value_1?: number | null
+          daily_value_2?: number | null
           habits?: Json | null
           
           is_onboarded?: boolean
@@ -197,16 +82,109 @@ export interface Database {
           pastor_phone?: string | null
           doctor_phone?: string | null
           
-          // ✅ AJOUT
+          // ✅ COLONNES AJOUTÉES
+          daily_value_1?: number | null
+          daily_value_2?: number | null
           habits?: Json | null
           
           is_onboarded?: boolean
           created_at?: string
           updated_at?: string | null
         }
+        Relationships: [
+          {
+            foreignKeyName: "user_profiles_addiction_type_id_fkey"
+            columns: ["addiction_type_id"]
+            isOneToOne: false
+            referencedRelation: "addiction_types"
+            referencedColumns: ["id"]
+          }
+        ]
       }
-      
-      // Votre table 'users' existante (probablement moins utilisée maintenant)
+      user_journals: {
+        Row: {
+          id: string
+          user_id: string
+          journal_date: string
+          mood: string
+          content: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          journal_date: string
+          mood: string
+          content?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          journal_date?: string
+          mood?: string
+          content?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+      }
+      addiction_types: {
+        Row: {
+          id: string
+          name: string
+          icon: string | null
+          color: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          icon?: string | null
+          color?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          icon?: string | null
+          color?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+
+      daily_pledges: {
+        Row: {
+          id: string
+          user_id: string
+          pledge_date: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          pledge_date: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          pledge_date?: string
+          created_at?: string
+        }
+        Relationships: [
+            {
+                foreignKeyName: "daily_pledges_user_id_fkey"
+                columns: ["user_id"]
+                isOneToOne: false
+                referencedRelation: "users"
+                referencedColumns: ["id"]
+              }
+        ]
+      }
+
       users: {
         Row: {
           id: string
@@ -232,31 +210,7 @@ export interface Database {
           created_at?: string
           updated_at?: string | null
         }
-      }
-      
-      // ✅ TABLE AJOUTÉE : addiction_types (Utile pour les types)
-      addiction_types: {
-        Row: {
-          id: string
-          name: string
-          icon: string | null
-          color: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          icon?: string | null
-          color?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          icon?: string | null
-          color?: string | null
-          created_at?: string
-        }
+        Relationships: []
       }
     }
     Views: {
@@ -266,6 +220,9 @@ export interface Database {
       [_: string]: never
     }
     Enums: {
+      [_: string]: never
+    }
+    CompositeTypes: {
       [_: string]: never
     }
   }

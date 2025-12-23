@@ -1,19 +1,25 @@
 import { getDashboardData } from '@/lib/actions/dashboard-actions';
-import { getDailyPledgeStatus } from '@/lib/actions/pledge-actions';
-import { getMonthPledges } from '@/lib/actions/calendar-actions';
+import { getTodayJournal } from '@/lib/actions/journal-actions';
 import DashboardManager from '@/components/dashboard/DashboardManager';
+import { JournalOverviewWidget } from '@/components/dashboard/widgets/JournalOverviewWidget';
 
 export default async function DashboardPage() {
   
-  const today = new Date();
-
-  const [dashboardData, hasPledgedToday, monthPledges] = await Promise.all([
+  // On récupère les données du dashboard ET le journal du jour en parallèle pour optimiser le temps de chargement 
+  const [dashboardData, todayJournal] = await Promise.all([
     getDashboardData(),
-    getDailyPledgeStatus(),
-    getMonthPledges(today.getFullYear(), today.getMonth())
+    getTodayJournal()
   ]);
-
-  const { userFirstName, daysSober, currentPhase, nextMilestone } = dashboardData;
+  
+  const { 
+    userFirstName, 
+    daysSober, 
+    hasPledgedToday, 
+    monthPledges, 
+    currentPhase, 
+    nextMilestone, 
+    stats 
+  } = dashboardData; 
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
@@ -28,17 +34,20 @@ export default async function DashboardPage() {
         <div className="text-sm bg-yellow-500/10 text-yellow-600 px-4 py-2 rounded-full font-medium self-start md:self-auto border border-yellow-500/20">
           Phase : {currentPhase}
         </div>
-      </div>
+      </div> 
 
-      {/* 🚀 LE CHANGEMENT EST ICI :
-         On appelle directement le DashboardManager sans titre "Votre Constance" autour.
-         Le Manager s'occupe d'afficher les widgets proprement.
+      {/* Gestionnaire principal (Compteur, Pledges, Stats, Calendrier).
+          On injecte JournalOverviewWidget directement dans la grille du manager 
+          pour qu'il se comporte comme les autres widgets (cliquable et harmonisé).
       */}
       <DashboardManager 
         daysSober={daysSober}
         hasPledgedToday={hasPledgedToday}
         nextMilestone={nextMilestone}
         monthPledges={monthPledges}
+        stats={stats}
+        // Ajout du widget d'aperçu cliquable vers la page journal
+        journalOverview={<JournalOverviewWidget todayEntry={todayJournal} />}
       />
 
     </div>
