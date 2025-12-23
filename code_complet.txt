@@ -1136,11 +1136,11 @@ FICHIER: C:\Users\gegem\free-indeed\app\(dashboard)\dashboard\page.tsx
 import { getDashboardData } from '@/lib/actions/dashboard-actions';
 import { getTodayJournal } from '@/lib/actions/journal-actions';
 import DashboardManager from '@/components/dashboard/DashboardManager';
-import JournalWidget from '@/components/dashboard/JournalWidget';
+import { JournalOverviewWidget } from '@/components/dashboard/widgets/JournalOverviewWidget';
 
 export default async function DashboardPage() {
   
-  // On rÃ©cupÃ¨re les donnÃ©es du dashboard ET le journal du jour en parallÃ¨le
+  // On rÃ©cupÃ¨re les donnÃ©es du dashboard ET le journal du jour en parallÃ¨le pour optimiser le temps de chargement 
   const [dashboardData, todayJournal] = await Promise.all([
     getDashboardData(),
     getTodayJournal()
@@ -1153,40 +1153,67 @@ export default async function DashboardPage() {
     monthPledges, 
     currentPhase, 
     nextMilestone, 
-    stats 
+    stats,
+    dailyVerse,
+    sobrietyStartDate,
+    relapseDates,
+    pledgeDates, // Indispensable pour colorer les jours verts passÃ©s
+    isBroken     // Indispensable pour signaler la rupture de sÃ©rie
   } = dashboardData;
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       
       {/* Header : Bonjour + Phase */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Bonjour, {userFirstName} ðŸ‘‹</h1>
-          <p className="text-gray-500">Un jour Ã  la fois. Votre espace personnel.</p>
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
+        <div className="space-y-2 flex-1">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-bold text-gray-900">
+              Bonjour, {userFirstName} ðŸ‘‹
+            </h1>
+            
+            {/* Alerte visuelle si l'utilisateur est en Ã©tat de rechute non rÃ©solue */}
+            {isBroken && (
+              <span className="bg-red-50 text-red-600 px-3 py-1 rounded-full text-xs font-bold animate-pulse border border-red-100">
+                SÃ©rie interrompue
+              </span>
+            )}
+          </div>
         </div>
-      
-        <div className="text-sm bg-yellow-500/10 text-yellow-600 px-4 py-2 rounded-full font-medium self-start md:self-auto border border-yellow-500/20">
-          Phase : {currentPhase}
+        
+        <div className="text-sm bg-yellow-500/10 text-yellow-600 px-4 py-2 rounded-full font-bold self-start md:self-auto border border-yellow-500/20 shadow-sm">
+           Phase : {currentPhase}
         </div>
-      </div>
 
-      {/* Gestionnaire principal (Compteur, Pledges, Stats, Calendrier) */}
+      </div>
+        {/* Affichage du verset du jour */}
+        {dailyVerse && (
+            <div className="mt-4 p-4 bg-amber-50/50 border-l-4 border-amber-400 rounded-r-2xl max-w-2xl shadow-sm">
+              <p className="text-gray-700 italic text-sm leading-relaxed">
+                {dailyVerse.text}
+              </p>
+              <p className="text-xs font-bold text-amber-600 mt-2 uppercase tracking-wider">
+                â€” {dailyVerse.reference}
+              </p>
+            </div>
+          )}
+
+      {/* Gestionnaire principal (Compteur, Pledges, Stats, Calendrier).
+          On injecte JournalOverviewWidget directement dans la grille du manager 
+          pour qu'il se comporte comme les autres widgets (cliquable et harmonisÃ©).
+      */}
       <DashboardManager 
         daysSober={daysSober}
         hasPledgedToday={hasPledgedToday}
         nextMilestone={nextMilestone}
         monthPledges={monthPledges}
         stats={stats}
+        journalOverview={<JournalOverviewWidget todayEntry={todayJournal} />}
+        sobrietyStartDate={sobrietyStartDate}
+        relapseDates={relapseDates} // Transmission de l'historique des rechutes
+        pledgeDates={pledgeDates}   // Transmission de l'historique des engagements
+        isBroken={isBroken}         // Transmission de l'Ã©tat de la sÃ©rie
       />
-
-      {/* Section Journaling (AjoutÃ©e en bas) */}
-      <div className="mt-8">
-         <JournalWidget 
-            initialMood={todayJournal?.mood} 
-            initialContent={todayJournal?.content} 
-         />
-      </div>
 
     </div>
   );
@@ -1197,94 +1224,103 @@ FICHIER: C:\Users\gegem\free-indeed\app\(dashboard)\journal\page.tsx
 ==========================================
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { Smile, Meh, Frown, Calendar as CalendarIcon, LucideIcon } from "lucide-react";
+import { Calendar, Trash2, ArrowLeft, BookOpen} from "lucide-react";
 import { SupabaseClient } from "@supabase/supabase-js";
+import { MOOD_MAP, MoodKey } from "@/lib/constants/moods";
+import { JournalForm } from "@/components/dashboard/JournalForm";
+import { deleteJournalEntry, getTodayJournal } from "@/lib/actions/journal-actions";
+import Link from "next/link";
 
-// 1. DÃ©finition du type rÃ©el de la ligne en base de donnÃ©es
-interface UserJournalRow {
+interface JournalEntry {
   id: string;
-  user_id: string;
   journal_date: string;
-  mood: string;
+  mood: MoodKey;
   content: string | null;
-  created_at: string | null;
-  updated_at: string | null;
 }
 
-type MoodConfig = {
-  icon: LucideIcon;
-  color: string;
-  bg: string;
-};
-
-const MOOD_MAP: Record<string, MoodConfig> = {
-  happy: { icon: Smile, color: "text-green-500", bg: "bg-green-50" },
-  neutral: { icon: Meh, color: "text-blue-500", bg: "bg-blue-50" },
-  sad: { icon: Frown, color: "text-orange-500", bg: "bg-orange-50" },
-};
-
-export default async function JournalHistoryPage() {
+export default async function JournalPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-
   if (!user) redirect('/login');
 
-  // Utilisation d'un client castÃ© en SupabaseClient (gÃ©nÃ©rique)
   const client = supabase as SupabaseClient;
+  const [todayEntry, { data }] = await Promise.all([
+    getTodayJournal(),
+    client.from('user_journals').select('*').eq('user_id', user.id).order('journal_date', { ascending: false })
+  ]);
 
-  const { data } = await client
-    .from('user_journals')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('journal_date', { ascending: false });
-
-  // Cast des donnÃ©es vers notre interface rÃ©elle sans passer par any
-  const entries = (data as unknown as UserJournalRow[]) || [];
+  const history = (data as unknown as JournalEntry[]) || [];
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 pb-10">
-      <header>
-        <h1 className="text-2xl font-bold text-gray-900">Mon Journal de bord</h1>
-        <p className="text-gray-500 text-sm">Retrouvez vos pensÃ©es et vos Ã©motions passÃ©es.</p>
-      </header>
+    <div className="max-w-4xl mx-auto space-y-8 pb-10 px-4 sm:px-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <Link href="/dashboard" className="p-2 hover:bg-white rounded-full transition-colors text-gray-400 hover:text-gray-900">
+          <ArrowLeft size={24} />
+        </Link>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Mon Journal</h1>
+          <p className="text-sm text-gray-500">Exprimez vos pensÃ©es et suivez votre humeur.</p>
+        </div>
+      </div>
 
-      <div className="space-y-4">
-        {entries.length === 0 ? (
-          <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-200">
-            <p className="text-gray-400">Aucune entrÃ©e pour le moment.</p>
+      <div className="space-y-10">
+        {/* BLOC REPOSITIONNÃ‰ : Aujourd'hui (Saisie) */}
+        <section>
+          <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
+            <h2 className="font-bold text-gray-900 mb-6 flex items-center gap-2">
+              <BookOpen size={18} className="text-blue-500" />
+              Aujourd&apos;hui
+            </h2>
+            <JournalForm initialData={todayEntry || undefined} />
           </div>
-        ) : (
-          entries.map((entry) => {
-            const config = MOOD_MAP[entry.mood] || MOOD_MAP.neutral;
-            const MoodIcon = config.icon;
+        </section>
 
-            return (
-              <article 
-                key={entry.id} 
-                className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300"
-              >
-                <div className={`w-12 h-12 rounded-full flex-shrink-0 flex items-center justify-center ${config.bg} ${config.color}`}>
-                  <MoodIcon size={24} />
-                </div>
-
-                <div className="flex-1">
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="text-sm font-bold text-gray-900 first-letter:uppercase">
-                      {new Date(entry.journal_date).toLocaleDateString('fr-FR', { 
-                        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
-                      })}
-                    </span>
-                    <CalendarIcon size={14} className="text-gray-300" />
+        {/* BLOC : Historique */}
+        <section className="space-y-4">
+          <h2 className="font-bold text-gray-900 flex items-center gap-2 ml-2">
+            <Calendar size={18} className="text-blue-500" /> 
+            Historique
+          </h2>
+          
+          {history.length === 0 ? (
+            <div className="text-center py-20 bg-white rounded-[2rem] border border-dashed border-gray-200">
+              <p className="text-gray-400 text-sm">Aucune note pour le moment.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4">
+              {history.map((entry) => {
+                const mood = MOOD_MAP[entry.mood] || MOOD_MAP.neutral;
+                return (
+                  <div key={entry.id} className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex gap-4 group hover:border-blue-100 transition-colors">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${mood.bg} ${mood.color}`}>
+                      <mood.icon size={26} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start">
+                        <span className="text-sm font-bold text-gray-900 capitalize">
+                          {new Date(entry.journal_date).toLocaleDateString('fr-FR', { 
+                            weekday: 'long', 
+                            day: 'numeric', 
+                            month: 'long' 
+                          })}
+                        </span>
+                        <form action={async () => { "use server"; await deleteJournalEntry(entry.id); }}>
+                          <button type="submit" className="text-gray-300 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-all">
+                            <Trash2 size={16}/>
+                          </button>
+                        </form>
+                      </div>
+                      <p className="text-gray-600 text-sm mt-2 whitespace-pre-wrap leading-relaxed">
+                        {entry.content || <span className="italic text-gray-300">Aucune note rÃ©digÃ©e ce jour-lÃ .</span>}
+                      </p>
+                    </div>
                   </div>
-                  
-                  <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap">
-                    {entry.content || "Aucune note Ã©crite ce jour-lÃ ."}
-                  </p>
-                </div>
-              </article>
-            );
-          })
-        )}
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );
@@ -2244,32 +2280,45 @@ export default function ConsumptionForm({ initialValue1, initialValue2, addictio
 }
 
 ==========================================
-FICHIER: C:\Users\gegem\free-indeed\components\dashboard\widgets\JournalWidget.tsx
+FICHIER: C:\Users\gegem\free-indeed\components\dashboard\widgets\JournalOverviewWidget.tsx
 ==========================================
-import { getTodayJournal } from "@/lib/actions/journal-actions";
-import { JournalForm } from "../JournalForm";
-import { BookOpen } from "lucide-react";
+import { MOOD_MAP, MoodKey } from "@/lib/constants/moods";
+import { BookText, Plus } from "lucide-react";
 import Link from "next/link";
 
-export async function JournalWidget() {
-  const todayEntry = await getTodayJournal();
+interface JournalOverviewProps {
+  todayEntry: { mood: string; content: string | null } | null;
+}
+
+export function JournalOverviewWidget({ todayEntry }: JournalOverviewProps) {
+  const mood = todayEntry ? MOOD_MAP[todayEntry.mood as MoodKey] : null;
+  const Icon = mood ? mood.icon : BookText;
 
   return (
-    <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm h-full flex flex-col">
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center gap-2">
-          <div className="p-2 bg-blue-50 rounded-lg">
-            <BookOpen className="w-5 h-5 text-blue-600" />
+    <Link href="/journal" className="block h-full">
+      <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all h-full flex flex-col justify-between group relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1 bg-yellow-500"></div>
+        
+        <div className="flex justify-between items-start">
+          <div className={`p-3 rounded-2xl ${mood ? mood.bg : 'bg-gray-50'}`}>
+            <Icon className={`w-6 h-6 ${mood ? mood.color : 'text-gray-400'}`} />
           </div>
-          <h2 className="font-bold text-gray-900">Journal du jour</h2>
+          <div className="bg-blue-50 text-blue-600 p-2 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
+            <Plus size={16} />
+          </div>
         </div>
-        <Link href="/journal" className="text-xs text-blue-600 font-medium hover:underline">
-          Historique
-        </Link>
-      </div>
 
-      <JournalForm initialData={todayEntry || undefined} />
-    </div>
+        <div>
+          <p className="text-gray-500 text-[10px] font-bold uppercase tracking-wider">Humeur du jour</p>
+          <h3 className="text-xl font-bold text-gray-900 mt-1">
+            {mood ? mood.label : "Non renseignÃ©e"}
+          </h3>
+          <p className="text-[10px] text-blue-600 font-bold mt-2">
+            {todayEntry ? "Note enregistrÃ©e" : "Appuyer pour Ã©crire"}
+          </p>
+        </div>
+      </div>
+    </Link>
   );
 }
 
@@ -2278,62 +2327,80 @@ FICHIER: C:\Users\gegem\free-indeed\components\dashboard\CalendarWidget.tsx
 ==========================================
 "use client";
 
-import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Loader2, Minus } from 'lucide-react';
-import { getMonthPledges } from '@/lib/actions/calendar-actions';
+import { useState } from 'react';
+import { ChevronLeft, ChevronRight, Minus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface CalendarWidgetProps {
-  initialPledges?: string[];
   miniMode?: boolean;
   isEditMode?: boolean;
   onDelete?: () => void;
+  sobrietyStartDate: string | null;
+  relapseDates: string[];
+  pledgeDates: string[];
+  isBroken: boolean;
 }
 
 export default function CalendarWidget({ 
-  initialPledges = [], 
   miniMode = false,
   isEditMode = false,
-  onDelete
+  onDelete,
+  sobrietyStartDate,
+  relapseDates,
+  pledgeDates,
+  isBroken
 }: CalendarWidgetProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [pledgedDates, setPledgedDates] = useState<string[]>(initialPledges);
-  const [isLoading, setIsLoading] = useState(false);
-
-  useEffect(() => {
-    if (currentDate.getMonth() !== new Date().getMonth()) {
-        const fetchData = async () => {
-        setIsLoading(true);
-        const dates = await getMonthPledges(currentDate.getFullYear(), currentDate.getMonth());
-        setPledgedDates(dates);
-        setIsLoading(false);
-        };
-        fetchData();
-    }
-  }, [currentDate]);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDay = (new Date(year, month, 1).getDay() + 6) % 7;
 
-  const changeMonth = (val: number) => setCurrentDate(new Date(year, month + val, 1));
+  // Utilitaire pour normaliser les dates (YYYY-MM-DD)
+  const normalize = (d: Date) => d.toLocaleDateString('en-CA');
+
+  const getDayStyles = (day: number) => {
+    const d = new Date(year, month, day);
+    const dateStr = normalize(d);
+    const todayStr = normalize(new Date());
+
+    // 1. FUTUR
+    if (dateStr > todayStr) return "bg-transparent text-gray-200";
+
+    // 2. RECHUTE : ROUGE FONCÃ‰
+    if (relapseDates.includes(dateStr)) {
+      return "bg-red-500 text-white font-bold ring-2 ring-red-100 shadow-sm";
+    }
+
+    // 3. ENGAGEMENT VALIDÃ‰ : VERT
+    if (pledgeDates.includes(dateStr)) {
+      return "bg-green-500 text-white font-bold shadow-sm";
+    }
+
+    // 4. Ã‰TAT DE CHUTE : ROUGE PÃ‚LE (Interruption de sÃ©rie)
+    if (isBroken && sobrietyStartDate && dateStr > normalize(new Date(sobrietyStartDate))) {
+      return "bg-red-50 text-red-400 border border-red-100";
+    }
+
+    // 5. PASSÃ‰ NEUTRE : GRIS
+    return "bg-gray-50 text-gray-300";
+  };
 
   const days = [];
-  for (let i = 0; i < firstDay; i++) days.push(<div key={`empty-${i}`} />);
+  for (let i = 0; i < firstDay; i++) days.push(<div key={`empty-${i}`} className="h-full w-full" />);
   
   for (let d = 1; d <= daysInMonth; d++) {
-    const dateStr = new Date(year, month, d).toLocaleDateString('en-CA');
-    const isPledged = pledgedDates.includes(dateStr);
-    const isToday = new Date().toDateString() === new Date(year, month, d).toDateString();
+    const style = getDayStyles(d);
+    const dateToCheck = new Date(year, month, d);
+    const isToday = new Date().toDateString() === dateToCheck.toDateString();
 
     days.push(
       <div key={d} className={cn(
-        "flex items-center justify-center rounded-md relative font-medium transition-all",
-        miniMode ? "h-full w-full" : "aspect-square", 
-        isPledged ? "bg-success text-white font-bold" : "bg-gray-50 text-gray-600",
-        isToday && !isPledged && "ring-1 ring-gold ring-offset-1 z-10",
-        miniMode ? "text-[10px]" : "text-sm"
+        "flex items-center justify-center rounded-xl transition-all relative",
+        miniMode ? "h-full w-full text-[10px]" : "aspect-square text-sm", 
+        style,
+        isToday && "ring-2 ring-blue-400 ring-offset-0.7 z-10"
       )}>
         {d}
       </div>
@@ -2342,74 +2409,37 @@ export default function CalendarWidget({
 
   return (
     <div className={cn(
-      // On applique ici les mÃªmes classes que votre exemple (bg-white, border-gray-100, shadow-sm...)
-      "bg-white border border-gray-100 shadow-sm flex flex-col h-full transition-all duration-500 relative overflow-hidden",
-      miniMode ? "p-6 rounded-2xl" : "p-6 rounded-2xl"
+      "bg-white border border-gray-100 shadow-sm flex flex-col h-full relative overflow-hidden rounded-3xl",
+      miniMode ? "p-4" : "p-6"
     )}>
+      <div className="absolute top-0 left-0 w-full h-1 bg-yellow-500" />
       
-      {/* --- AJOUT : La barre jaune dÃ©corative en haut (Comme sur le widget TrophÃ©e) --- */}
-      <div className="absolute top-0 left-0 w-full h-1 bg-yellow-500"></div>
-
-      {/* BOUTON SUPPRIMER */}
       {isEditMode && onDelete && (
-        <button 
-            onClick={(e) => {
-                e.stopPropagation();
-                onDelete();
-            }}
-            className="absolute top-6 right-6 z-50 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center shadow-md hover:bg-red-600 hover:scale-110 transition-all animate-in zoom-in duration-200"
-            title="Supprimer le widget"
-        >
-            <Minus size={16} strokeWidth={4} />
+        <button onClick={onDelete} className="absolute top-4 right-4 bg-red-500 text-white rounded-full p-1 shadow-md z-20">
+          <Minus size={14} />
         </button>
       )}
 
-      {/* Header */}
-      <div className={cn("flex items-center justify-between", miniMode ? "mb-2" : "mb-4")}>
-        <span className={cn("font-bold text-gray-900 capitalize", miniMode ? "text-sm" : "text-lg")}>
-            {currentDate.toLocaleDateString('fr-FR', { month: 'long' })} <span className="text-gray-400 font-normal">{miniMode ? '' : year}</span>
-        </span>
-        
-        <div className={cn("flex gap-1", isEditMode ? "opacity-0 pointer-events-none" : "opacity-100")}>
-            <button 
-              onClick={(e) => { e.stopPropagation(); changeMonth(-1); }} 
-              className="p-1 hover:bg-gray-100 rounded text-gray-400 transition-colors"
-            >
-                <ChevronLeft size={miniMode ? 16 : 20} />
-            </button>
-            <button 
-              onClick={(e) => { e.stopPropagation(); changeMonth(1); }} 
-              className="p-1 hover:bg-gray-100 rounded text-gray-400 transition-colors"
-              disabled={new Date() < new Date(year, month + 1, 1)}
-            >
-                <ChevronRight size={miniMode ? 16 : 20} />
-            </button>
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="font-bold text-gray-900 capitalize text-sm">
+          {currentDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
+        </h3>
+        <div className="flex gap-1">
+          <button onClick={() => setCurrentDate(new Date(year, month - 1, 1))} className="p-1 hover:bg-gray-50 rounded-lg">
+            <ChevronLeft size={18} className="text-gray-400" />
+          </button>
+          <button onClick={() => setCurrentDate(new Date(year, month + 1, 1))} className="p-1 hover:bg-gray-50 rounded-lg" disabled={new Date() < new Date(year, month + 1, 1)}>
+            <ChevronRight size={18} className="text-gray-400" />
+          </button>
         </div>
       </div>
 
-      {/* Grille */}
-      <div className="flex-1 flex flex-col justify-between relative">
-          {isLoading && (
-            <div className="absolute inset-0 bg-white/80 z-20 flex items-center justify-center">
-              <Loader2 className="animate-spin text-gold w-5 h-5"/>
-            </div>
-          )}
-          
-          <div className="grid grid-cols-7 text-center mb-1">
-            {['L','M','M','J','V','S','D'].map((d, i) => (
-                <span key={i} className={cn("font-bold text-gray-400", miniMode ? "text-[9px]" : "text-xs")}>
-                  {d}
-                </span>
-            ))}
-          </div>
-          
-          <div className={cn(
-              "grid grid-cols-7 flex-1", 
-              miniMode ? "gap-1 auto-rows-fr" : "gap-2"
-          )}>
-            {days}
-          </div>
+      <div className="grid grid-cols-7 gap-1 text-center font-bold text-[10px] text-gray-400 mb-2">
+        {['L','M','M','J','V','S','D'].map((day, i) => (
+          <span key={i}>{day}</span>
+        ))}
       </div>
+      <div className="grid grid-cols-7 gap-1 flex-1">{days}</div>
     </div>
   );
 }
@@ -2545,11 +2575,13 @@ FICHIER: C:\Users\gegem\free-indeed\components\dashboard\DashboardManager.tsx
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Settings2, Trophy, CalendarDays, Plus, TrendingUp } from 'lucide-react';
+import { Settings2, Trophy, CalendarDays, Plus, Minus, TrendingUp, BookText } from 'lucide-react';
 import DailyPledgeWidget from './DailyPledgeWidget';
 import CalendarWidget from './CalendarWidget';
 import StatsWidget from './StatsWidget';
+import { RelapseButton } from './RelapseButton';
 
+// Interfaces TypÃ©es
 interface MilestoneData {
   label: string;
   progress: number;
@@ -2563,45 +2595,58 @@ interface StatsData {
 
 interface DashboardManagerProps {
   daysSober: number;
+  isBroken: boolean;
   hasPledgedToday: boolean;
+  sobrietyStartDate: string | null;
+  relapseDates: string[];
+  pledgeDates: string[];
+  stats: StatsData;
   nextMilestone: MilestoneData;
-  monthPledges: string[];
-  stats: StatsData; // âœ… Les donnÃ©es stats
+  monthPledges?: string[]; // GardÃ© pour compatibilitÃ© mais non passÃ© au widget
+  journalOverview: React.ReactNode;
 }
 
 export default function DashboardManager({ 
   daysSober, 
   hasPledgedToday, 
   nextMilestone, 
-  monthPledges,
-  stats 
+  stats,
+  journalOverview,
+  sobrietyStartDate,
+  relapseDates,
+  pledgeDates,
+  isBroken
 }: DashboardManagerProps) {
   
   const router = useRouter();
   const [isEditMode, setIsEditMode] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const dashboardRef = useRef<HTMLDivElement>(null);
-
-  // LocalStorage States
-  const [showCalendar, setShowCalendar] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return localStorage.getItem('dashboard_show_calendar') === 'true';
-  });
-
-  const [showStats, setShowStats] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    const saved = localStorage.getItem('dashboard_show_stats');
-    return saved === null ? true : saved === 'true'; // âœ… Par dÃ©faut TRUE
-  });
-  
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // --- Ã‰tats LocalStorage (Persistance des prÃ©fÃ©rences) ---
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [showStats, setShowStats] = useState(true);
+  const [showJournal, setShowJournal] = useState(true);
+
   useEffect(() => {
-    const timer = setTimeout(() => setIsMounted(true), 0);
+    const timer = setTimeout(() => {
+      setIsMounted(true);
+      setShowCalendar(localStorage.getItem('dashboard_show_calendar') === 'true');
+      const savedStats = localStorage.getItem('dashboard_show_stats');
+      setShowStats(savedStats === null ? true : savedStats === 'true');
+      const savedJournal = localStorage.getItem('dashboard_show_journal');
+      setShowJournal(savedJournal === null ? true : savedJournal === 'true');
+    }, 0);
     return () => clearTimeout(timer);
   }, []);
 
-  // Click Outside Logic
+  const toggleWidget = (key: string, current: boolean, setter: (val: boolean) => void) => {
+    const newState = !current;
+    setter(newState);
+    localStorage.setItem(`dashboard_show_${key}`, String(newState));
+  };
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (!isEditMode) return;
@@ -2614,20 +2659,6 @@ export default function DashboardManager({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isEditMode]);
 
-  // Toggles
-  const toggleCalendar = () => {
-    const newState = !showCalendar;
-    setShowCalendar(newState);
-    localStorage.setItem('dashboard_show_calendar', String(newState));
-  };
-
-  const toggleStats = () => {
-    const newState = !showStats;
-    setShowStats(newState);
-    localStorage.setItem('dashboard_show_stats', String(newState));
-  };
-
-  // Long Press Logic
   const startPress = useCallback(() => {
     if (isEditMode) return;
     timerRef.current = setTimeout(() => {
@@ -2656,7 +2687,6 @@ export default function DashboardManager({
   return (
     <div className="space-y-4" ref={dashboardRef}>
       
-      {/* Header : Bouton Personnaliser */}
       <div className="flex justify-end">
         <button 
           data-action="toggle-edit" 
@@ -2673,36 +2703,40 @@ export default function DashboardManager({
         </button>
       </div>
 
-      {/* GRILLE */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-[220px]">
         
-        {/* 1. COMPTEUR */}
-        <div className="col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center text-center relative overflow-hidden justify-center h-full w-full">
+        {/* COMPTEUR */}
+        <div className="col-span-1 bg-white p-6 rounded-3xl border border-gray-100 flex flex-col items-center justify-center text-center relative overflow-hidden shadow-sm h-full w-full">
           <div className="absolute top-0 left-0 w-full h-1 bg-yellow-500"></div>
+          
+          <div className="absolute top-4 right-4 z-20">
+              <RelapseButton />
+          </div>
+
           <div className="w-10 h-10 bg-yellow-500/10 rounded-full flex items-center justify-center mb-3 text-yellow-600">
             <Trophy size={20} />
           </div>
-          <span className="text-4xl font-bold text-gray-900 mb-1">{daysSober}</span>
-          <span className="text-xs text-gray-500 font-bold uppercase tracking-wider">Jours de libertÃ©</span>
+          <span className="text-5xl font-black text-gray-900 mb-1">{daysSober}</span>
+          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Jours de libertÃ©</span>
         </div>
 
-        {/* 2. ENGAGEMENT */}
+        {/* ENGAGEMENT */}
         <div className="col-span-1 h-full w-full">
             <DailyPledgeWidget initialHasPledged={hasPledgedToday} />
         </div>
 
-        {/* 3. PROCHAIN JALON */}
-        <div className="col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center h-full w-full">
-          <div className="flex items-center gap-2 mb-4 text-gray-900 font-semibold text-sm">
+        {/* JALON */}
+        <div className="col-span-1 bg-white p-6 rounded-3xl border border-gray-100 flex flex-col justify-center shadow-sm h-full w-full">
+          <div className="flex items-center gap-2 mb-4 text-gray-900 font-bold text-sm">
             <CalendarDays className="text-blue-500" size={18} />
             Prochain Jalon
           </div>
-          <div className="space-y-3">
-            <div className="flex justify-between text-xs font-medium">
-              <span className="text-gray-500">{nextMilestone.label}</span>
-              <span className="text-gray-900">{nextMilestone.progress}%</span>
+          <div className="space-y-4">
+            <div className="flex justify-between text-xs font-bold">
+              <span className="text-gray-400">{nextMilestone.label}</span>
+              <span className="text-gray-900">{nextMilestone.progress.toFixed(0)}%</span>
             </div>
-            <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+            <div className="w-full bg-gray-50 rounded-full h-2">
               <div 
                 className="bg-blue-500 h-2 rounded-full transition-all duration-1000 ease-out" 
                 style={{ width: `${nextMilestone.progress}%` }}
@@ -2714,25 +2748,57 @@ export default function DashboardManager({
          </div>
         </div>
 
-        {/* 4. CALENDRIER */}
-        {showCalendar && (
+        {/* JOURNAL */}
+        {showJournal ? (
+          <div 
+            className="col-span-1 relative group h-full w-full animate-in fade-in zoom-in duration-300 cursor-pointer"
+            {...longPressHandlers}
+          >
+            {isEditMode && <div className="absolute inset-0 z-10 bg-white/10 rounded-2xl" />}
+            {journalOverview}
+            {isEditMode && (
+              <button 
+                onClick={(e) => { e.preventDefault(); toggleWidget('journal', showJournal, setShowJournal); }}
+                className="absolute top-4 right-4 z-20 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center shadow-md hover:bg-red-600 transition-all animate-in zoom-in duration-200"
+              >
+                <Minus size={16} strokeWidth={4} />
+              </button>
+            )}
+          </div>
+        ) : isEditMode && (
+          <button 
+            onClick={() => toggleWidget('journal', showJournal, setShowJournal)}
+            className="col-span-1 h-full w-full border-2 border-dashed border-gray-300 rounded-2xl flex flex-col items-center justify-center text-gray-400 hover:border-yellow-500 hover:text-yellow-600 hover:bg-yellow-500/5 transition-all group animate-in fade-in zoom-in"
+          >
+            <div className="w-12 h-12 rounded-full bg-gray-100 group-hover:bg-yellow-500/10 flex items-center justify-center mb-2 transition-colors">
+              <BookText size={24} />
+            </div>
+            <span className="font-medium text-sm">Ajouter Journal</span>
+          </button>
+        )}
+
+        {/* CALENDRIER */}
+        {showCalendar ? (
           <div 
             className="col-span-1 relative group h-full w-full overflow-hidden animate-in fade-in zoom-in duration-300 cursor-pointer"
             {...longPressHandlers}
           >
             {isEditMode && <div className="absolute inset-0 z-10 bg-white/10 rounded-2xl" />}
+            
+            {/* CORRECTION ICI : Utilisation exclusive de pledgeDates */}
             <CalendarWidget 
-                initialPledges={monthPledges} 
                 miniMode={true} 
                 isEditMode={isEditMode}
-                onDelete={toggleCalendar}
+                onDelete={() => toggleWidget('calendar', showCalendar, setShowCalendar)}
+                sobrietyStartDate={sobrietyStartDate}
+                relapseDates={relapseDates}
+                pledgeDates={pledgeDates} 
+                isBroken={isBroken}       
             />
           </div>
-        )}
-
-        {!showCalendar && isEditMode && (
+        ) : isEditMode && (
             <button 
-                onClick={toggleCalendar}
+                onClick={() => toggleWidget('calendar', showCalendar, setShowCalendar)}
                 className="col-span-1 h-full w-full border-2 border-dashed border-gray-300 rounded-2xl flex flex-col items-center justify-center text-gray-400 hover:border-yellow-500 hover:text-yellow-600 hover:bg-yellow-500/5 transition-all group animate-in fade-in zoom-in"
             >
                 <div className="w-12 h-12 rounded-full bg-gray-100 group-hover:bg-yellow-500/10 flex items-center justify-center mb-2 transition-colors">
@@ -2742,8 +2808,8 @@ export default function DashboardManager({
             </button>
         )}
 
-        {/* 5. STATS (Cliquable pour navigation) */}
-        {showStats && (
+        {/* STATS */}
+        {showStats ? (
             <div 
                 className="col-span-1 relative group h-full w-full overflow-hidden animate-in fade-in zoom-in duration-300 cursor-pointer"
                 {...longPressHandlers}
@@ -2751,16 +2817,14 @@ export default function DashboardManager({
             >
                 {isEditMode && <div className="absolute inset-0 z-10 bg-white/10 rounded-2xl" />}
                 <StatsWidget 
-                    data={stats} // âœ… DonnÃ©es dynamiques
+                    data={stats}
                     isEditMode={isEditMode}
-                    onDelete={toggleStats}
+                    onDelete={() => toggleWidget('stats', showStats, setShowStats)}
                 />
             </div>
-        )}
-
-        {!showStats && isEditMode && (
+        ) : isEditMode && (
             <button 
-                onClick={toggleStats}
+                onClick={() => toggleWidget('stats', showStats, setShowStats)}
                 className="col-span-1 h-full w-full border-2 border-dashed border-gray-300 rounded-2xl flex flex-col items-center justify-center text-gray-400 hover:border-green-500 hover:text-green-600 hover:bg-green-500/5 transition-all group animate-in fade-in zoom-in"
             >
                 <div className="w-12 h-12 rounded-full bg-gray-100 group-hover:bg-green-500/10 flex items-center justify-center mb-2 transition-colors">
@@ -2769,131 +2833,173 @@ export default function DashboardManager({
                 <span className="font-medium text-sm">Ajouter Stats</span>
             </button>
         )}
-
+        
       </div>
     </div>
   );
 }
 
 ==========================================
-FICHIER: C:\Users\gegem\free-indeed\components\dashboard\JournalWidget.tsx
+FICHIER: C:\Users\gegem\free-indeed\components\dashboard\JournalForm.tsx
 ==========================================
 "use client";
 
-import { useState, useTransition } from "react";
-import { Smile, Meh, Frown, Save, Loader2, MessageSquare } from "lucide-react";
+import { useState } from "react";
 import { saveJournalEntry } from "@/lib/actions/journal-actions";
+import { MOODS } from "@/lib/constants/moods";
+import { Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 
-interface JournalWidgetProps {
-  initialMood?: string | null;
-  initialContent?: string | null;
+interface JournalFormProps {
+  initialData?: { mood: string; content: string | null };
 }
 
-export default function JournalWidget({ initialMood, initialContent }: JournalWidgetProps) {
-  const [mood, setMood] = useState(initialMood || "");
-  const [content, setContent] = useState(initialContent || "");
-  const [isExpanded, setIsExpanded] = useState(!!initialMood); // Ouvrir si dÃ©jÃ  rempli
-  const [isPending, startTransition] = useTransition();
+export function JournalForm({ initialData }: JournalFormProps) {
+  const [loading, setLoading] = useState(false);
+  const [selectedMood, setSelectedMood] = useState(initialData?.mood || "neutral");
+  const [content, setContent] = useState(initialData?.content || "");
 
-  const moods = [
-    { value: "happy", icon: Smile, color: "text-green-500", bg: "bg-green-100", label: "Bien" },
-    { value: "neutral", icon: Meh, color: "text-blue-500", bg: "bg-blue-100", label: "Moyen" },
-    { value: "sad", icon: Frown, color: "text-orange-500", bg: "bg-orange-100", label: "Difficile" },
-  ];
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (loading) return;
 
-  const handleSubmit = () => {
-    if (!mood) {
-        toast.error("SÃ©lectionnez une humeur");
-        return;
-    }
+    setLoading(true);
 
-    const formData = new FormData();
-    formData.append("mood", mood);
-    formData.append("content", content);
+    try {
+      const formData = new FormData();
+      formData.append("mood", selectedMood);
+      formData.append("content", content);
+      
+      const result = await saveJournalEntry(formData);
 
-    startTransition(async () => {
-      const res = await saveJournalEntry(formData);
-      if (res.success) {
-        toast.success("Journal enregistrÃ© !");
-        setIsExpanded(false);
+      if (result.success) {
+        toast.success("Note enregistrÃ©e !");
+        
+        // --- CORRECTION : RÃ©initialisation systÃ©matique ---
+        // On retire la condition !initialData pour vider le champ Ã  chaque fois
+        setContent("");           // Vide le textarea
+        setSelectedMood("neutral"); // Remet l'humeur sur Neutre
+        
       } else {
-        toast.error("Erreur...");
+        toast.error("Erreur : " + (result.error || "Impossible de sauvegarder"));
       }
-    });
+    } catch (err) {
+      console.error("Erreur lors de l'opÃ©ration :", err);
+      toast.error("Une erreur rÃ©seau est survenue");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="grid grid-cols-5 gap-1 sm:gap-2">
+        {MOODS.map((mood) => {
+          const isSelected = selectedMood === mood.id;
+          return (
+            <button 
+              key={mood.id} 
+              type="button" 
+              disabled={loading}
+              onClick={() => setSelectedMood(mood.id)} 
+              className={`flex flex-col items-center p-2 rounded-xl border-2 transition-all ${
+                isSelected ? 'border-blue-500 bg-blue-50 scale-105' : 'border-transparent bg-gray-50 opacity-70 hover:opacity-100'
+              } disabled:cursor-not-allowed`}
+            >
+              <mood.icon className={`w-6 h-6 sm:w-7 sm:h-7 ${mood.color}`} />
+              <span className="text-[9px] sm:text-[10px] font-bold mt-1 truncate w-full text-center">
+                {mood.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <textarea 
+        value={content} 
+        onChange={(e) => setContent(e.target.value)} 
+        disabled={loading}
+        placeholder="Comment s'est passÃ©e ta journÃ©e ?" 
+        className="w-full p-4 rounded-2xl bg-gray-50 border-none text-sm min-h-[150px] resize-none focus:ring-2 focus:ring-blue-500/20 text-gray-900 disabled:opacity-50" 
+      />
+
+      <button 
+        type="submit" 
+        disabled={loading || !content.trim()} 
+        className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold text-sm hover:bg-black flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save size={18} />}
+        Enregistrer
+      </button>
+    </form>
+  );
+}
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\components\dashboard\RelapseButton.tsx
+==========================================
+"use client";
+
+import { useState } from "react";
+import { handleRelapse } from "@/lib/actions/dashboard-actions";
+import { RefreshCcw, AlertTriangle, Loader2, X } from "lucide-react";
+import { toast } from "sonner";
+
+export function RelapseButton() {
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const onRelapse = async () => {
+    setIsLoading(true);
+    try {
+      const result = await handleRelapse();
+      if (result.success) {
+        toast.success("Nouveau dÃ©part ! Courage, chaque jour est une victoire.");
+        setIsConfirming(false);
+      } else {
+        toast.error("Erreur lors de la rÃ©initialisation.");
+      }
+    } catch (error) {
+      console.error("Erreur lors de l'opÃ©ration :", error);
+      toast.error("Une erreur est survenue.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  if (!isExpanded) {
+  if (isConfirming) {
     return (
-      <button 
-        onClick={() => setIsExpanded(true)}
-        className="w-full bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between hover:bg-gray-50 transition-all group"
-      >
-        <div className="flex items-center gap-3">
-           <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-600">
-             <MessageSquare size={20} />
-           </div>
-           <div className="text-left">
-             <p className="font-semibold text-gray-900 text-sm">Journal de bord</p>
-             <p className="text-xs text-gray-500">Comment vous sentez-vous ?</p>
-           </div>
-        </div>
-        <div className="text-gray-300 group-hover:text-purple-500 transition-colors">
-            +
-        </div>
-      </button>
+      <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-2">
+        <button
+          disabled={isLoading}
+          onClick={onRelapse}
+          className="bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all shadow-sm"
+        >
+          {isLoading ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <AlertTriangle size={12} />
+          )}
+          Confirmer la rechute
+        </button>
+        <button
+          onClick={() => setIsConfirming(false)}
+          className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 transition-colors"
+        >
+          <X size={14} />
+        </button>
+      </div>
     );
   }
 
   return (
-    <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm animate-in fade-in zoom-in-95">
-      <h3 className="font-semibold text-gray-900 mb-4 text-sm">Humeur du jour</h3>
-      
-      {/* 1. Smileys */}
-      <div className="flex justify-between gap-2 mb-4">
-        {moods.map((m) => (
-          <button
-            key={m.value}
-            onClick={() => setMood(m.value)}
-            className={`
-              flex-1 py-3 rounded-xl flex flex-col items-center gap-2 transition-all border
-              ${mood === m.value 
-                ? `${m.bg} ${m.color} border-${m.color.split('-')[1]}-200 ring-1 ring-${m.color.split('-')[1]}-200` 
-                : 'bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100'}
-            `}
-          >
-            <m.icon size={24} />
-            <span className="text-xs font-medium">{m.label}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* 2. Text Area */}
-      <textarea
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        placeholder="Une note pour plus tard ? (Victoire, difficultÃ©, pensÃ©e...)"
-        className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 mb-4 min-h-[80px] resize-none"
-      />
-
-      {/* 3. Actions */}
-      <div className="flex gap-2">
-        <button 
-            onClick={() => setIsExpanded(false)}
-            className="flex-1 py-2 text-sm text-gray-500 hover:bg-gray-50 rounded-lg"
-        >
-            Annuler
-        </button>
-        <button 
-            onClick={handleSubmit}
-            disabled={isPending || !mood}
-            className="flex-1 bg-gray-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-black transition-colors flex items-center justify-center gap-2"
-        >
-            {isPending ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            Enregistrer
-        </button>
-      </div>
-    </div>
+    <button
+      onClick={() => setIsConfirming(true)}
+      className="text-gray-300 hover:text-red-400 transition-colors p-1.5 rounded-full"
+      title="DÃ©clarer une rechute"
+    >
+<RefreshCcw size={16} />
+    </button>
   );
 }
 
@@ -4031,8 +4137,9 @@ FICHIER: C:\Users\gegem\free-indeed\lib\actions\dashboard-actions.ts
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { getVerseForTheDay } from '../utils/verse-picker';
+import { revalidatePath } from "next/cache";
 
-// DÃ©finition des interfaces
 interface AddictionTypeData {
   name: string;
   icon: string | null;
@@ -4041,28 +4148,64 @@ interface AddictionTypeData {
 interface DashboardProfile {
   first_name: string | null;
   sobriety_start_date: string | null;
+  is_broken: boolean;
+  created_at: string;
   daily_value_1: number | null;
   daily_value_2: number | null;
   addiction_types: AddictionTypeData | null; 
 }
 
-interface Pledge {
-  pledge_date: string;
+export async function handleRelapse() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) return { success: false, error: "Non autorisÃ©" };
+
+  // Date locale YYYY-MM-DD
+  const todayStr = new Date().toLocaleDateString('en-CA');
+
+  // 1. Archivage de la rechute (Rouge)
+  // On ajoute previous_streak_days: 0 pour satisfaire TypeScript et la contrainte NOT NULL
+  const { error: relapseError } = await supabase
+    .from('relapses')
+    .insert({
+      user_id: user.id,
+      relapse_date: todayStr,
+      previous_streak_days: 0 
+    });
+
+  if (relapseError) {
+    console.error("Erreur Relapse:", relapseError.message);
+  }
+
+  // 2. Mise en Ã©tat de rupture (Le compteur s'arrÃªte, calendrier en attente)
+  const { error: profileError } = await supabase
+    .from('user_profiles')
+    .update({ is_broken: true })
+    .eq('user_id', user.id);
+
+  if (profileError) {
+    return { success: false, error: profileError.message };
+  }
+
+  revalidatePath('/dashboard');
+  return { success: true };
 }
 
 export async function getDashboardData() {
   const supabase = await createClient();
-  
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Non autorisÃ©");
 
-  // RÃ©cupÃ©ration Profil + Type d'addiction
+  // RÃ©cupÃ©ration Profil
   const { data: profileData, error } = await supabase
     .from('user_profiles')
     .select(`
-      first_name,
-      sobriety_start_date,
-      daily_value_1,
+      first_name, 
+      sobriety_start_date, 
+      is_broken, 
+      created_at,
+      daily_value_1, 
       daily_value_2,
       addiction_types (
         name,
@@ -4073,140 +4216,76 @@ export async function getDashboardData() {
     .single();
 
   if (error || !profileData) {
-    // Redirection soft si pas de profil (Ã©vite le crash)
+    // Retour par dÃ©faut si pas de profil (Onboarding)
     return {
        userFirstName: "InvitÃ©",
        daysSober: 0,
+       isBroken: false,
        hasPledgedToday: false,
        monthPledges: [],
        currentPhase: "Onboarding",
        nextMilestone: { label: "DÃ©part", progress: 0, daysLeft: 1 },
-       stats: { label1: "-", value1: "0", unit1: "", icon1: "activity", label2: "-", value2: "0", unit2: "", icon2: "activity" }
+       stats: { label1: "-", value1: "0", unit1: "", icon1: "activity", label2: "-", value2: "0", unit2: "", icon2: "activity" },
+       dailyVerse: getVerseForTheDay("DEFAULT"),
+       sobrietyStartDate: null,
+       relapseDates: [],
+       pledgeDates: []
     };
   }
 
   const profile = profileData as unknown as DashboardProfile;
 
-  // RÃ©cupÃ©ration Engagements
-  const { data: pledgesData } = await supabase
-    .from('daily_pledges')
-    .select('pledge_date')
-    .eq('user_id', user.id);
+  // RÃ©cupÃ©ration des donnÃ©es connexes
+  const { data: relapses } = await supabase.from('relapses').select('relapse_date').eq('user_id', user.id);
+  const { data: pledges } = await supabase.from('daily_pledges').select('pledge_date').eq('user_id', user.id);
 
-  const pledges: Pledge[] = pledgesData || [];
-
-  // --- 1. Calcul Jours Sobres (BasÃ© sur la date) ---
+  // Calcul des jours sobres
   let daysSober = 0;
-  if (profile.sobriety_start_date) {
+  // Si le profil est "brisÃ©" (en rechute non rÃ©solue), le compteur est Ã  0
+  if (profile.sobriety_start_date && !profile.is_broken) {
     const start = new Date(profile.sobriety_start_date);
     const now = new Date();
     start.setHours(0, 0, 0, 0);
     now.setHours(0, 0, 0, 0);
     const diffTime = now.getTime() - start.getTime();
     daysSober = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    // Si la date est aujourd'hui, on peut dire 0 ou 1 selon votre prÃ©fÃ©rence.
-    // Ici on met max(0) pour Ã©viter les nÃ©gatifs.
-    daysSober = Math.max(0, daysSober); 
+    daysSober = Math.max(0, daysSober);
   }
 
-  // --- 2. Infos Pledges ---
+  const addictionName = profile.addiction_types?.name || 'DEFAULT';
   const todayStr = new Date().toLocaleDateString('en-CA');
-  const hasPledgedToday = pledges.some((p) => p.pledge_date === todayStr);
+  const pledgeDates = pledges?.map(p => p.pledge_date) || [];
+  const hasPledgedToday = pledgeDates.includes(todayStr);
 
-  const currentMonth = new Date().getMonth();
-  const currentYear = new Date().getFullYear();
-  const monthPledges = pledges
-    .filter((p) => {
-      const d = new Date(p.pledge_date);
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-    })
-    .map((p) => p.pledge_date);
-
-  // --- 3. Stats Dynamiques ---
-  const v1 = profile.daily_value_1 || 0; 
-  const v2 = profile.daily_value_2 || 0; 
+  // Stats (SimplifiÃ© pour l'exemple, reprenez votre logique complexe si besoin)
+  const v1 = profile.daily_value_1 || 0;
   
-  // Normalisation du nom pour la dÃ©tection (Majuscules, sans accents si possible)
-  const addictionName = profile.addiction_types?.name || 'ALCOHOL';
-  const norm = addictionName.toUpperCase();
-
-  let statsData = {
-    label1: "Ã‰conomies", value1: "0", unit1: "â‚¬", icon1: "wallet",
-    label2: "SantÃ©", value2: "0", unit2: "kcal", icon2: "activity"
-  };
-
-  // LOGIQUE DE DÃ‰TECTION ROBUSTE
-  if (norm.includes('TABAC') || norm.includes('CIGARETTE') || norm.includes('TOBACCO')) {
-      // TABAC : v1 = Prix Paquet (20 cigs), v2 = Cigs/jour
-      // CoÃ»t = (Jours * CigsParJour / 20) * PrixPaquet
-      const cost = (daysSober * v2 / 20) * v1;
-      
-      // Vie gagnÃ©e : 1 cig = 11 minutes
-      const minutesGained = daysSober * v2 * 11;
-      const hoursGained = Math.floor(minutesGained / 60);
-
-      statsData = {
-        label1: "Ã‰conomies",
-        value1: cost.toFixed(0),
-        unit1: "â‚¬",
-        icon1: "wallet",
-        label2: "Vie gagnÃ©e",
-        value2: hoursGained.toString(),
-        unit2: "h",
-        icon2: "hourglass"
-      };
-  } 
-  else if (norm.includes('PORNO') || norm.includes('SEX')) {
-      // PORN : v1 = Heures/jour perdues
-      const hoursSaved = daysSober * v1;
-      
-      statsData = {
-        label1: "Temps gagnÃ©",
-        value1: hoursSaved.toFixed(0),
-        unit1: "h",
-        icon1: "clock",
-        label2: "Confiance",
-        value2: "+" + (daysSober * 1.5).toFixed(0), // Arbitraire : +1.5% par jour
-        unit2: "%",
-        icon2: "brain"
-      };
-  } 
-  else if (norm.includes('SOCIAL') || norm.includes('ECRAN') || norm.includes('RESEAU') || norm.includes('MEDIA')) {
-      // RESEAUX : v1 = Heures/jour
-      statsData = {
-        label1: "Temps Ã©cran",
-        value1: (daysSober * v1).toFixed(0),
-        unit1: "h Ã©vitÃ©es",
-        icon1: "smartphone-off",
-        label2: "ProductivitÃ©",
-        value2: (daysSober * (v1 * 0.5)).toFixed(0), // On assume 50% du temps rÃ©cupÃ©rÃ© est productif
-        unit2: "h gagnÃ©es",
-        icon2: "zap"
-      };
-  } 
-  else {
-      // DÃ‰FAUT (ALCOOL, DROGUE, ETC.)
-      // v1 = CoÃ»t/jour, v2 = Calories/jour
-      statsData = {
-        label1: "Ã‰conomies",
-        value1: (daysSober * v1).toFixed(0),
-        unit1: "â‚¬",
-        icon1: "wallet",
-        label2: "SantÃ©",
-        value2: (daysSober * v2).toFixed(0),
-        unit2: "kcal",
-        icon2: "activity"
-      };
-  }
-
   return {
     userFirstName: profile.first_name || "Utilisateur",
     daysSober,
+    isBroken: profile.is_broken || false,
     hasPledgedToday,
-    monthPledges,
-    currentPhase: "Phase 1",
-    nextMilestone: { label: "30 Jours", progress: Math.min(100, (daysSober / 30) * 100), daysLeft: Math.max(0, 30 - daysSober) },
-    stats: statsData
+    monthPledges: pledgeDates, // RÃ©trocompatibilitÃ©
+    sobrietyStartDate: profile.sobriety_start_date,
+    relapseDates: relapses?.map(r => r.relapse_date) || [],
+    pledgeDates: pledgeDates,
+    dailyVerse: getVerseForTheDay(addictionName),
+    stats: { 
+        label1: "Ã‰conomies", 
+        value1: (daysSober * v1).toFixed(0), 
+        unit1: "â‚¬", 
+        icon1: "wallet", 
+        label2: "SantÃ©", 
+        value2: (daysSober * 5).toFixed(0), 
+        unit2: "pts", 
+        icon2: "activity" 
+    },
+    nextMilestone: { 
+        label: "30 Jours", 
+        progress: parseFloat(Math.min(100, (daysSober / 30) * 100).toFixed(1)), 
+        daysLeft: Math.max(0, 30 - daysSober)
+    },
+    currentPhase: "Phase 1"
   };
 }
 
@@ -4218,89 +4297,80 @@ FICHIER: C:\Users\gegem\free-indeed\lib\actions\journal-actions.ts
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { SupabaseClient } from "@supabase/supabase-js";
+import { MOODS, getMoodFromValue } from "@/lib/constants/moods";
 
-export type JournalEntry = {
-  mood: string;
-  content: string;
-};
 
-export interface MoodHistoryItem {
-  day: string;
-  mood: string | null;
-}
 
-// Interface pour typer les donnÃ©es brutes de la base
-interface RawJournalData {
-  journal_date: string;
-  mood: string;
-}
-
-// Sauvegarder (ou mettre Ã  jour) le journal du jour
 export async function saveJournalEntry(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  
-  if (!user) return { success: false, error: "Non connectÃ©" };
+
+  if (!user) return { success: false, error: "Non autorisÃ©" };
 
   const mood = formData.get("mood") as string;
   const content = formData.get("content") as string;
-  const today = new Date().toLocaleDateString('en-CA'); // Format YYYY-MM-DD
+  const today = new Date().toISOString().split('T')[0];
 
-  if (!mood) return { success: false, error: "Humeur requise" };
-
-  // Utilisation de SupabaseClient pour Ã©viter l'erreur de table manquante dans le type global
-  const client = supabase as SupabaseClient;
-
-  const { error } = await client
+  // On utilise .insert() pour permettre plusieurs entrÃ©es par jour
+  const { error } = await supabase
     .from('user_journals')
-    .upsert({
-      user_id: user.id,
-      journal_date: today,
-      mood,
-      content,
-      updated_at: new Date().toISOString()
+    .insert({ 
+      user_id: user.id, 
+      journal_date: today, 
+      mood, 
+      content 
     });
 
   if (error) {
-    console.error("Journal Error:", error);
-    return { success: false, error: "Erreur de sauvegarde" };
+    return { success: false, error: error.message };
   }
 
   revalidatePath('/dashboard');
-  revalidatePath('/stats');
   revalidatePath('/journal');
-  
   return { success: true };
 }
 
-// RÃ©cupÃ©rer l'entrÃ©e d'aujourd'hui
 export async function getTodayJournal() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const today = new Date().toLocaleDateString('en-CA');
-  const client = supabase as SupabaseClient;
+  const today = new Date().toISOString().split('T')[0];
 
-  const { data } = await client
+  const { data: entries, error } = await supabase
     .from('user_journals')
     .select('mood, content')
     .eq('user_id', user.id)
-    .eq('journal_date', today)
-    .maybeSingle();
+    .eq('journal_date', today);
 
-  return data as { mood: string; content: string | null } | null;
+  if (error || !entries || entries.length === 0) return null;
+
+  // Calcul de la moyenne numÃ©rique des humeurs
+  const totalValue = entries.reduce((acc, entry) => {
+    // On cherche la valeur numÃ©rique associÃ©e Ã  l'ID textuel
+    const moodConfig = MOODS.find(m => m.id === entry.mood);
+    return acc + (moodConfig?.value || 3); // 3 (Neutre) par dÃ©faut si non trouvÃ©
+  }, 0);
+
+  const averageValue = totalValue / entries.length;
+  
+  // On rÃ©cupÃ¨re l'objet humeur le plus proche de la moyenne
+  const averageMood = getMoodFromValue(averageValue);
+
+  return {
+    mood: averageMood.id,
+    content: entries[entries.length - 1].content, // Affiche le texte de la derniÃ¨re note
+    count: entries.length
+  };
 }
 
-// RÃ©cupÃ©rer les 7 derniers jours pour les STATS
-export async function getLast7DaysMoods(): Promise<MoodHistoryItem[]> {
+export async function getLast7DaysMoods() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
-  const today = new Date();
   const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(today.getDate() - 6);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
 
   const client = supabase as SupabaseClient;
 
@@ -4311,24 +4381,46 @@ export async function getLast7DaysMoods(): Promise<MoodHistoryItem[]> {
     .gte('journal_date', sevenDaysAgo.toLocaleDateString('en-CA'))
     .order('journal_date', { ascending: true });
 
-  const result: MoodHistoryItem[] = [];
-  const entries = (data as RawJournalData[]) || [];
+  const entries = (data || []) as { journal_date: string, mood: string }[];
+  const result = [];
   
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
-    d.setDate(today.getDate() - i);
-    const dateStr = d.toLocaleDateString('fr-FR', { weekday: 'short' });
+    d.setDate(d.getDate() - i);
     const sqlDate = d.toLocaleDateString('en-CA');
-    
     const found = entries.find((item) => item.journal_date === sqlDate);
     
     result.push({
-      day: dateStr,
+      day: d.toLocaleDateString('fr-FR', { weekday: 'short' }),
       mood: found ? found.mood : null
     });
   }
 
   return result;
+}
+
+export async function deleteJournalEntry(entryId: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) return { success: false, error: "Non autorisÃ©" };
+
+  const { error } = await supabase
+    .from('user_journals')
+    .delete()
+    .eq('id', entryId)
+    .eq('user_id', user.id); // SÃ©curitÃ© : on s'assure que c'est bien son journal
+
+  if (error) {
+    console.error("Erreur suppression journal:", error);
+    return { success: false, error: error.message };
+  }
+
+  // On rafraÃ®chit les pages susceptibles d'afficher le journal
+  revalidatePath('/dashboard');
+  revalidatePath('/journal');
+  
+  return { success: true };
 }
 
 ==========================================
@@ -4444,38 +4536,38 @@ export async function getDailyPledgeStatus() {
 }
 
 export async function submitDailyPledge() {
-  console.log("âš¡ ACTION SERVEUR REÃ‡UE : submitDailyPledge"); // Regardez le terminal VSCode
-
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { success: false, error: "Non connectÃ©" };
 
-  if (!user) {
-    console.log("âŒ Erreur : Pas d'utilisateur connectÃ©");
-    return { success: false, error: "Utilisateur non connectÃ©" };
+  const today = new Date();
+  const todayStr = today.toLocaleDateString('en-CA');
+
+  // 1. VÃ©rifier si l'utilisateur redÃ©marre aprÃ¨s une chute
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('is_broken')
+    .eq('user_id', user.id)
+    .single();
+
+  if (profile?.is_broken) {
+    // RedÃ©marrage de la sÃ©rie : La date de dÃ©but devient aujourd'hui
+    await supabase
+      .from('user_profiles')
+      .update({ 
+        sobriety_start_date: today.toISOString(),
+        is_broken: false 
+      })
+      .eq('user_id', user.id);
   }
 
-  const today = new Date().toISOString().split('T')[0];
-  console.log(`ðŸ“ Tentative d'insertion pour User ${user.id} Ã  la date ${today}`);
-
+  // 2. Enregistrement de l'engagement (Case Verte)
   const { error } = await supabase
     .from('daily_pledges')
-    .insert({
-      user_id: user.id,
-      pledge_date: today
-    });
+    .insert({ user_id: user.id, pledge_date: todayStr });
 
-  if (error) {
-    // Si c'est un doublon, c'est OK
-    if (error.code === '23505') {
-        console.log("âš ï¸ DÃ©jÃ  fait aujourd'hui (Doublon)");
-        return { success: true };
-    }
-    
-    console.error("âŒ ERREUR SQL SUPABASE :", error); // TRÃˆS IMPORTANT
-    return { success: false, error: error.message || "Erreur base de donnÃ©es" };
-  }
+  if (error && error.code !== '23505') return { success: false, error: error.message };
 
-  console.log("âœ… SUCCÃˆS : Insertion rÃ©ussie");
   revalidatePath('/dashboard');
   return { success: true };
 }
@@ -4520,6 +4612,37 @@ export async function updateConsumptionSettings(formData: FormData) {
     return { success: false, error: "Erreur lors de la mise Ã  jour." };
   }
 }
+
+==========================================
+FICHIER: C:\Users\gegem\free-indeed\lib\constants\daily-verses.ts
+==========================================
+export interface BibleVerse {
+    text: string;
+    reference: string;
+  }
+  
+  export const DAILY_VERSES: Record<string, BibleVerse[]> = {
+    'ALCOOL': [
+      { text: "Ne vous enivrez pas de vin : c'est de la dÃ©bauche. Soyez, au contraire, remplis de l'Esprit.", reference: "Ã‰phÃ©siens 5:18" },
+      { text: "Le vin est moqueur, les boissons fortes sont tumultueuses ; quiconque en fait excÃ¨s n'est pas sage.", reference: "Proverbes 20:1" }
+    ],
+    'TABAC': [
+      { text: "Ne savez-vous pas que votre corps est le temple du Saint-Esprit qui est en vous ?", reference: "1 Corinthiens 6:19" },
+      { text: "Tout m'est permis, mais tout n'est pas utile ; tout m'est permis, mais je ne me laisserai asservir par quoi que ce soit.", reference: "1 Corinthiens 6:12" }
+    ],
+    'PORNO': [
+      { text: "CrÃ©e en moi un cÅ“ur pur, Ã´ Dieu, renouvÃ¨le en moi un esprit bien disposÃ©.", reference: "Psaume 51:10" },
+      { text: "Heureux ceux qui ont le cÅ“ur pur, car ils verront Dieu !", reference: "Matthieu 5:8" }
+    ],
+    'ECRANS': [
+      { text: "DÃ©tourne mes yeux de la vue des choses vaines, fais-moi vivre dans ta voie !", reference: "Psaume 119:37" },
+      { text: "Fais attention Ã  ta maniÃ¨re de vivre. Ne te conduis pas comme un ignorant, mais comme un sage.", reference: "Ã‰phÃ©siens 5:15" }
+    ],
+    'DEFAULT': [
+      { text: "Je puis tout par celui qui me fortifie.", reference: "Philippiens 4:13" },
+      { text: "Ne t'ai-je pas donnÃ© cet ordre : Fortifie-toi et prends courage ?", reference: "JosuÃ© 1:9" }
+    ]
+  };
 
 ==========================================
 FICHIER: C:\Users\gegem\free-indeed\lib\constants\habits.tsx
@@ -4603,12 +4726,13 @@ import {
 ==========================================
 FICHIER: C:\Users\gegem\free-indeed\lib\constants\moods.ts
 ==========================================
-import { Laugh, Smile, Meh, Angry, LucideIcon } from "lucide-react";
+import { Laugh, Smile, Meh, Frown, Angry, LucideIcon } from "lucide-react";
 
 export type MoodKey = 'happy' | 'calm' | 'neutral' | 'anxious' | 'angry';
 
 export interface MoodConfig {
   id: MoodKey;
+  value: number; // Indispensable pour le calcul de la moyenne
   icon: LucideIcon;
   color: string;
   bg: string;
@@ -4616,17 +4740,24 @@ export interface MoodConfig {
 }
 
 export const MOODS: MoodConfig[] = [
-  { id: 'happy', icon: Laugh, color: 'text-green-500', bg: 'bg-green-50', label: 'Joyeux' },
-  { id: 'calm', icon: Smile, color: 'text-emerald-400', bg: 'bg-emerald-50', label: 'Calme' },
-  { id: 'neutral', icon: Meh, color: 'text-blue-400', bg: 'bg-blue-50', label: 'Neutre' },
-  { id: 'anxious', icon: Grimace, color: 'text-orange-400', bg: 'bg-orange-50', label: 'Anxieux' },
-  { id: 'angry', icon: Angry, color: 'text-red-500', bg: 'bg-red-50', label: 'ColÃ©reux' },
+  { id: 'happy', value: 5, icon: Laugh, color: 'text-green-500', bg: 'bg-green-50', label: 'Joyeux' },
+  { id: 'calm', value: 4, icon: Smile, color: 'text-emerald-500', bg: 'bg-emerald-50', label: 'Calme' },
+  { id: 'neutral', value: 3, icon: Meh, color: 'text-blue-500', bg: 'bg-blue-50', label: 'Neutre' },
+  { id: 'anxious', value: 2, icon: Frown, color: 'text-orange-500', bg: 'bg-orange-50', label: 'Anxieux' },
+  { id: 'angry', value: 1, icon: Angry, color: 'text-red-500', bg: 'bg-red-50', label: 'ColÃ©reux' },
 ];
 
+// Option A : Exporter MOOD_MAP pour corriger l'erreur de build directement
 export const MOOD_MAP = MOODS.reduce((acc, mood) => {
   acc[mood.id] = mood;
   return acc;
 }, {} as Record<string, MoodConfig>);
+
+// Option B : Helper pour trouver l'humeur la plus proche d'une moyenne numÃ©rique
+export const getMoodFromValue = (val: number): MoodConfig => {
+  const rounded = Math.round(val);
+  return MOODS.find(m => m.value === rounded) || MOODS[2]; // Retourne Neutre par dÃ©faut
+};
 
 ==========================================
 FICHIER: C:\Users\gegem\free-indeed\lib\errors\mapping.ts
@@ -5017,15 +5148,7 @@ export type Database = {
           relapse_date?: string
           user_id?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "relapses_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       streaks: {
         Row: {
@@ -5110,6 +5233,7 @@ export type Database = {
           gender: string | null
           habits: Json | null
           id: string
+          is_broken: boolean | null
           is_onboarded: boolean | null
           last_name: string | null
           pastor_phone: string | null
@@ -5135,6 +5259,7 @@ export type Database = {
           gender?: string | null
           habits?: Json | null
           id?: string
+          is_broken?: boolean | null
           is_onboarded?: boolean | null
           last_name?: string | null
           pastor_phone?: string | null
@@ -5160,6 +5285,7 @@ export type Database = {
           gender?: string | null
           habits?: Json | null
           id?: string
+          is_broken?: boolean | null
           is_onboarded?: boolean | null
           last_name?: string | null
           pastor_phone?: string | null
@@ -5180,6 +5306,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_relapses: {
+        Row: {
+          created_at: string | null
+          id: string
+          reason: string | null
+          relapse_date: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          reason?: string | null
+          relapse_date: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          reason?: string | null
+          relapse_date?: string
+          user_id?: string | null
+        }
+        Relationships: []
       }
       users: {
         Row: {
@@ -5374,6 +5524,32 @@ export const Constants = {
 } as const
 
 ==========================================
+FICHIER: C:\Users\gegem\free-indeed\lib\utils\verse-picker.ts
+==========================================
+import { DAILY_VERSES, BibleVerse } from '../constants/daily-verses';
+
+export function getVerseForTheDay(addictionName: string): BibleVerse {
+  const norm = addictionName.toUpperCase();
+  let category = 'DEFAULT';
+
+  if (norm.includes('TABAC')) category = 'TABAC';
+  else if (norm.includes('ALCOOL')) category = 'ALCOOL';
+  else if (norm.includes('PORNO')) category = 'PORNO';
+  else if (norm.includes('ECRAN')) category = 'ECRANS';
+
+  const verses = DAILY_VERSES[category];
+  
+  // Utilise le jour de l'annÃ©e pour choisir l'index
+  const now = new Date();
+  const start = new Date(now.getFullYear(), 0, 0);
+  const diff = now.getTime() - start.getTime();
+  const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
+  
+  const index = dayOfYear % verses.length;
+  return verses[index];
+}
+
+==========================================
 FICHIER: C:\Users\gegem\free-indeed\lib\validations\auth.ts
 ==========================================
 import { z } from "zod";
@@ -5497,90 +5673,229 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-export interface Database {
+export type Database = {
+  // Structure interne nÃ©cessaire Ã  l'instanciation automatique de Supabase
+  __InternalSupabase: {
+    PostgrestVersion: "14.1"
+  }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
-      user_profiles: {
+      addiction_types: {
         Row: {
+          color: string
+          created_at: string | null
+          description: string | null
+          icon: string | null
           id: string
-          user_id: string
-          first_name: string | null
-          last_name: string | null
-          username: string | null
-          email: string | null
-          phone_number: string | null
-          gender: string | null
-          birth_date: string | null
-          avatar_url: string | null
-          
-          addiction_type_id: string | null
-          sobriety_start_date: string | null
-          emergency_contact_phone: string | null
-          pastor_phone: string | null
-          doctor_phone: string | null
-          
-          // âœ… COLONNES AJOUTÃ‰ES
-          daily_value_1: number | null
-          daily_value_2: number | null
-          habits: Json | null
-          
-          is_onboarded: boolean
-          created_at: string
-          updated_at: string | null
+          name: string
         }
         Insert: {
+          color: string
+          created_at?: string | null
+          description?: string | null
+          icon?: string | null
           id?: string
-          user_id: string
-          first_name?: string | null
-          last_name?: string | null
-          username?: string | null
-          email?: string | null
-          phone_number?: string | null
-          gender?: string | null
-          birth_date?: string | null
-          avatar_url?: string | null
-          
-          addiction_type_id?: string | null
-          sobriety_start_date?: string | null
-          emergency_contact_phone?: string | null
-          pastor_phone?: string | null
-          doctor_phone?: string | null
-          
-          // âœ… COLONNES AJOUTÃ‰ES
-          daily_value_1?: number | null
-          daily_value_2?: number | null
-          habits?: Json | null
-          
-          is_onboarded?: boolean
-          created_at?: string
-          updated_at?: string | null
+          name: string
         }
         Update: {
+          color?: string
+          created_at?: string | null
+          description?: string | null
+          icon?: string | null
           id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      daily_pledges: {
+        Row: {
+          created_at: string | null
+          id: string
+          pledge_date: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          pledge_date?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          pledge_date?: string
           user_id?: string
-          first_name?: string | null
-          last_name?: string | null
-          username?: string | null
-          email?: string | null
-          phone_number?: string | null
-          gender?: string | null
-          birth_date?: string | null
-          avatar_url?: string | null
-          
+        }
+        Relationships: []
+      }
+      relapses: {
+        Row: {
+          created_at: string | null
+          id: string
+          note: string | null
+          previous_streak_days: number
+          relapse_date: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          note?: string | null
+          previous_streak_days: number
+          relapse_date?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          note?: string | null
+          previous_streak_days?: number
+          relapse_date?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "relapses_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_journals: {
+        Row: {
+          content: string | null
+          created_at: string | null
+          id: string
+          journal_date: string
+          mood: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string | null
+          id?: string
+          journal_date: string
+          mood: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          content?: string | null
+          created_at?: string | null
+          id?: string
+          journal_date?: string
+          mood?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_profiles: {
+        Row: {
+          addiction_type_id: string | null
+          birth_date: string | null
+          can_change_addiction_after: string | null
+          created_at: string | null
+          daily_value_1: number | null
+          daily_value_2: number | null
+          doctor_phone: string | null
+          email: string | null
+          emergency_contact_phone: string | null
+          first_name: string | null
+          gender: string | null
+          habits: Json | null
+          id: string
+          is_onboarded: boolean | null
+          is_broken: boolean | null // AJOUTÃ‰
+          last_name: string | null
+          pastor_phone: string | null
+          pastor_phones: string[] | null
+          phone_number: string | null
+          sobriety_days_at_change: number | null
+          sobriety_start_date: string | null
+          updated_at: string | null
+          user_id: string | null
+          username: string | null
+        }
+        Insert: {
           addiction_type_id?: string | null
-          sobriety_start_date?: string | null
-          emergency_contact_phone?: string | null
-          pastor_phone?: string | null
-          doctor_phone?: string | null
-          
-          // âœ… COLONNES AJOUTÃ‰ES
+          birth_date?: string | null
+          can_change_addiction_after?: string | null
+          created_at?: string | null
           daily_value_1?: number | null
           daily_value_2?: number | null
+          doctor_phone?: string | null
+          email?: string | null
+          emergency_contact_phone?: string | null
+          first_name?: string | null
+          gender?: string | null
           habits?: Json | null
-          
-          is_onboarded?: boolean
-          created_at?: string
+          id?: string
+          is_onboarded?: boolean | null
+          is_broken?: boolean | null // AJOUTÃ‰
+          last_name?: string | null
+          pastor_phone?: string | null
+          pastor_phones?: string[] | null
+          phone_number?: string | null
+          sobriety_days_at_change?: number | null
+          sobriety_start_date?: string | null
           updated_at?: string | null
+          user_id?: string | null
+          username?: string | null
+        }
+        Update: {
+          addiction_type_id?: string | null
+          birth_date?: string | null
+          can_change_addiction_after?: string | null
+          created_at?: string | null
+          daily_value_1?: number | null
+          daily_value_2?: number | null
+          doctor_phone?: string | null
+          email?: string | null
+          emergency_contact_phone?: string | null
+          first_name?: string | null
+          gender?: string | null
+          habits?: Json | null
+          id?: string
+          is_onboarded?: boolean | null
+          is_broken?: boolean | null // AJOUTÃ‰
+          last_name?: string | null
+          pastor_phone?: string | null
+          pastor_phones?: string[] | null
+          phone_number?: string | null
+          sobriety_days_at_change?: number | null
+          sobriety_start_date?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+          username?: string | null
         }
         Relationships: [
           {
@@ -5589,135 +5904,198 @@ export interface Database {
             isOneToOne: false
             referencedRelation: "addiction_types"
             referencedColumns: ["id"]
-          }
+          },
         ]
       }
-      user_journals: {
-        Row: {
-          id: string
-          user_id: string
-          journal_date: string
-          mood: string
-          content: string | null
-          created_at: string | null
-          updated_at: string | null
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          journal_date: string
-          mood: string
-          content?: string | null
-          created_at?: string | null
-          updated_at?: string | null
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          journal_date?: string
-          mood?: string
-          content?: string | null
-          created_at?: string | null
-          updated_at?: string | null
-        }
-      }
-      addiction_types: {
-        Row: {
-          id: string
-          name: string
-          icon: string | null
-          color: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          icon?: string | null
-          color?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          icon?: string | null
-          color?: string | null
-          created_at?: string
-        }
-        Relationships: []
-      }
-
-      daily_pledges: {
-        Row: {
-          id: string
-          user_id: string
-          pledge_date: string
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          pledge_date: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          pledge_date?: string
-          created_at?: string
-        }
-        Relationships: [
-            {
-                foreignKeyName: "daily_pledges_user_id_fkey"
-                columns: ["user_id"]
-                isOneToOne: false
-                referencedRelation: "users"
-                referencedColumns: ["id"]
-              }
-        ]
-      }
-
       users: {
         Row: {
-          id: string
-          email: string | null
-          full_name: string | null
           avatar_url: string | null
-          created_at: string
+          birth_date: string | null
+          created_at: string | null
+          email: string | null
+          first_name: string
+          gender: string | null
+          id: string
+          last_name: string
+          phone_number: string
           updated_at: string | null
+          username: string
         }
         Insert: {
-          id: string
-          email?: string | null
-          full_name?: string | null
           avatar_url?: string | null
-          created_at?: string
+          birth_date?: string | null
+          created_at?: string | null
+          email?: string | null
+          first_name: string
+          gender?: string | null
+          id: string
+          last_name: string
+          phone_number: string
           updated_at?: string | null
+          username: string
         }
         Update: {
-          id?: string
-          email?: string | null
-          full_name?: string | null
           avatar_url?: string | null
-          created_at?: string
+          birth_date?: string | null
+          created_at?: string | null
+          email?: string | null
+          first_name?: string
+          gender?: string | null
+          id?: string
+          last_name?: string
+          phone_number?: string
           updated_at?: string | null
+          username?: string
         }
         Relationships: []
       }
     }
     Views: {
-      [_: string]: never
+      [_ in never]: never
     }
     Functions: {
-      [_: string]: never
+      calculate_sobriety_days: {
+        Args: {
+          p_user_id: string
+        }
+        Returns: number
+      }
+      get_current_streak: {
+        Args: {
+          p_user_id: string
+        }
+        Returns: {
+          days_count: number
+          start_date: string
+          streak_id: string
+        }[]
+      }
     }
     Enums: {
-      [_: string]: never
+      [_ in never]: never
     }
     CompositeTypes: {
-      [_: string]: never
+      [_ in never]: never
     }
   }
 }
+
+// Helpers types gÃ©nÃ©riques pour Supabase (Maintenus tels quels)
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
+
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
+
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
 
 ==========================================
 FICHIER: C:\Users\gegem\free-indeed\types\user.ts

@@ -87,6 +87,73 @@ export type Database = {
         }
         Relationships: []
       }
+      prayer_requests: {
+        Row: {
+          addiction_type_id: string
+          content: string
+          created_at: string | null
+          id: string
+          is_resolved: boolean | null
+          user_id: string
+        }
+        Insert: {
+          addiction_type_id: string
+          content: string
+          created_at?: string | null
+          id?: string
+          is_resolved?: boolean | null
+          user_id: string
+        }
+        Update: {
+          addiction_type_id?: string
+          content?: string
+          created_at?: string | null
+          id?: string
+          is_resolved?: boolean | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prayer_requests_addiction_type_id_fkey"
+            columns: ["addiction_type_id"]
+            isOneToOne: false
+            referencedRelation: "addiction_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      prayer_supports: {
+        Row: {
+          created_at: string | null
+          id: string
+          message: string | null
+          request_id: string
+          supporter_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          message?: string | null
+          request_id: string
+          supporter_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          message?: string | null
+          request_id?: string
+          supporter_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prayer_supports_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "prayer_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       relapses: {
         Row: {
           created_at: string | null
@@ -112,15 +179,7 @@ export type Database = {
           relapse_date?: string
           user_id?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "relapses_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       streaks: {
         Row: {
@@ -163,6 +222,7 @@ export type Database = {
       user_journals: {
         Row: {
           content: string | null
+          context: string | null
           created_at: string | null
           id: string
           journal_date: string
@@ -172,6 +232,7 @@ export type Database = {
         }
         Insert: {
           content?: string | null
+          context?: string | null
           created_at?: string | null
           id?: string
           journal_date: string
@@ -181,6 +242,7 @@ export type Database = {
         }
         Update: {
           content?: string | null
+          context?: string | null
           created_at?: string | null
           id?: string
           journal_date?: string
@@ -205,6 +267,7 @@ export type Database = {
           gender: string | null
           habits: Json | null
           id: string
+          is_broken: boolean | null
           is_onboarded: boolean | null
           last_name: string | null
           pastor_phone: string | null
@@ -230,6 +293,7 @@ export type Database = {
           gender?: string | null
           habits?: Json | null
           id?: string
+          is_broken?: boolean | null
           is_onboarded?: boolean | null
           last_name?: string | null
           pastor_phone?: string | null
@@ -255,6 +319,7 @@ export type Database = {
           gender?: string | null
           habits?: Json | null
           id?: string
+          is_broken?: boolean | null
           is_onboarded?: boolean | null
           last_name?: string | null
           pastor_phone?: string | null
@@ -275,6 +340,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_relapses: {
+        Row: {
+          created_at: string | null
+          id: string
+          reason: string | null
+          relapse_date: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          reason?: string | null
+          relapse_date: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          reason?: string | null
+          relapse_date?: string
+          user_id?: string | null
+        }
+        Relationships: []
       }
       users: {
         Row: {

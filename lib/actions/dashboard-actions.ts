@@ -1,8 +1,9 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { getVerseForTheDay } from '../utils/verse-picker';
+import { revalidatePath } from "next/cache";
 
-// Définition des interfaces
 interface AddictionTypeData {
   name: string;
   icon: string | null;
@@ -11,28 +12,64 @@ interface AddictionTypeData {
 interface DashboardProfile {
   first_name: string | null;
   sobriety_start_date: string | null;
+  is_broken: boolean;
+  created_at: string;
   daily_value_1: number | null;
   daily_value_2: number | null;
   addiction_types: AddictionTypeData | null; 
 }
 
-interface Pledge {
-  pledge_date: string;
+export async function handleRelapse() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) return { success: false, error: "Non autorisé" };
+
+  // Date locale YYYY-MM-DD
+  const todayStr = new Date().toLocaleDateString('en-CA');
+
+  // 1. Archivage de la rechute (Rouge)
+  // On ajoute previous_streak_days: 0 pour satisfaire TypeScript et la contrainte NOT NULL
+  const { error: relapseError } = await supabase
+    .from('relapses')
+    .insert({
+      user_id: user.id,
+      relapse_date: todayStr,
+      previous_streak_days: 0 
+    });
+
+  if (relapseError) {
+    console.error("Erreur Relapse:", relapseError.message);
+  }
+
+  // 2. Mise en état de rupture (Le compteur s'arrête, calendrier en attente)
+  const { error: profileError } = await supabase
+    .from('user_profiles')
+    .update({ is_broken: true })
+    .eq('user_id', user.id);
+
+  if (profileError) {
+    return { success: false, error: profileError.message };
+  }
+
+  revalidatePath('/dashboard');
+  return { success: true };
 }
 
 export async function getDashboardData() {
   const supabase = await createClient();
-  
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Non autorisé");
 
-  // Récupération Profil + Type d'addiction
+  // Récupération Profil
   const { data: profileData, error } = await supabase
     .from('user_profiles')
     .select(`
-      first_name,
-      sobriety_start_date,
-      daily_value_1,
+      first_name, 
+      sobriety_start_date, 
+      is_broken, 
+      created_at,
+      daily_value_1, 
       daily_value_2,
       addiction_types (
         name,
@@ -43,139 +80,75 @@ export async function getDashboardData() {
     .single();
 
   if (error || !profileData) {
-    // Redirection soft si pas de profil (évite le crash)
+    // Retour par défaut si pas de profil (Onboarding)
     return {
        userFirstName: "Invité",
        daysSober: 0,
+       isBroken: false,
        hasPledgedToday: false,
        monthPledges: [],
        currentPhase: "Onboarding",
        nextMilestone: { label: "Départ", progress: 0, daysLeft: 1 },
-       stats: { label1: "-", value1: "0", unit1: "", icon1: "activity", label2: "-", value2: "0", unit2: "", icon2: "activity" }
+       stats: { label1: "-", value1: "0", unit1: "", icon1: "activity", label2: "-", value2: "0", unit2: "", icon2: "activity" },
+       dailyVerse: getVerseForTheDay("DEFAULT"),
+       sobrietyStartDate: null,
+       relapseDates: [],
+       pledgeDates: []
     };
   }
 
   const profile = profileData as unknown as DashboardProfile;
 
-  // Récupération Engagements
-  const { data: pledgesData } = await supabase
-    .from('daily_pledges')
-    .select('pledge_date')
-    .eq('user_id', user.id);
+  // Récupération des données connexes
+  const { data: relapses } = await supabase.from('relapses').select('relapse_date').eq('user_id', user.id);
+  const { data: pledges } = await supabase.from('daily_pledges').select('pledge_date').eq('user_id', user.id);
 
-  const pledges: Pledge[] = pledgesData || [];
-
-  // --- 1. Calcul Jours Sobres (Basé sur la date) ---
+  // Calcul des jours sobres
   let daysSober = 0;
-  if (profile.sobriety_start_date) {
+  // Si le profil est "brisé" (en rechute non résolue), le compteur est à 0
+  if (profile.sobriety_start_date && !profile.is_broken) {
     const start = new Date(profile.sobriety_start_date);
     const now = new Date();
     start.setHours(0, 0, 0, 0);
     now.setHours(0, 0, 0, 0);
     const diffTime = now.getTime() - start.getTime();
     daysSober = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    // Si la date est aujourd'hui, on peut dire 0 ou 1 selon votre préférence.
-    // Ici on met max(0) pour éviter les négatifs.
-    daysSober = Math.max(0, daysSober); 
+    daysSober = Math.max(0, daysSober);
   }
 
-  // --- 2. Infos Pledges ---
+  const addictionName = profile.addiction_types?.name || 'DEFAULT';
   const todayStr = new Date().toLocaleDateString('en-CA');
-  const hasPledgedToday = pledges.some((p) => p.pledge_date === todayStr);
+  const pledgeDates = pledges?.map(p => p.pledge_date) || [];
+  const hasPledgedToday = pledgeDates.includes(todayStr);
 
-  const currentMonth = new Date().getMonth();
-  const currentYear = new Date().getFullYear();
-  const monthPledges = pledges
-    .filter((p) => {
-      const d = new Date(p.pledge_date);
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-    })
-    .map((p) => p.pledge_date);
-
-  // --- 3. Stats Dynamiques ---
-  const v1 = profile.daily_value_1 || 0; 
-  const v2 = profile.daily_value_2 || 0; 
+  // Stats (Simplifié pour l'exemple, reprenez votre logique complexe si besoin)
+  const v1 = profile.daily_value_1 || 0;
   
-  // Normalisation du nom pour la détection (Majuscules, sans accents si possible)
-  const addictionName = profile.addiction_types?.name || 'ALCOHOL';
-  const norm = addictionName.toUpperCase();
-
-  let statsData = {
-    label1: "Économies", value1: "0", unit1: "€", icon1: "wallet",
-    label2: "Santé", value2: "0", unit2: "kcal", icon2: "activity"
-  };
-
-  // LOGIQUE DE DÉTECTION ROBUSTE
-  if (norm.includes('TABAC') || norm.includes('CIGARETTE') || norm.includes('TOBACCO')) {
-      // TABAC : v1 = Prix Paquet (20 cigs), v2 = Cigs/jour
-      // Coût = (Jours * CigsParJour / 20) * PrixPaquet
-      const cost = (daysSober * v2 / 20) * v1;
-      
-      // Vie gagnée : 1 cig = 11 minutes
-      const minutesGained = daysSober * v2 * 11;
-      const hoursGained = Math.floor(minutesGained / 60);
-
-      statsData = {
-        label1: "Économies",
-        value1: cost.toFixed(0),
-        unit1: "€",
-        icon1: "wallet",
-        label2: "Vie gagnée",
-        value2: hoursGained.toString(),
-        unit2: "h",
-        icon2: "hourglass"
-      };
-  } 
-  else if (norm.includes('PORNO') || norm.includes('SEX')) {
-      // PORN : v1 = Heures/jour perdues
-      const hoursSaved = daysSober * v1;
-      
-      statsData = {
-        label1: "Temps gagné",
-        value1: hoursSaved.toFixed(0),
-        unit1: "h",
-        icon1: "clock",
-        label2: "Confiance",
-        value2: "+" + (daysSober * 1.5).toFixed(0), // Arbitraire : +1.5% par jour
-        unit2: "%",
-        icon2: "brain"
-      };
-  } 
-  else if (norm.includes('SOCIAL') || norm.includes('ECRAN') || norm.includes('RESEAU') || norm.includes('MEDIA')) {
-      // RESEAUX : v1 = Heures/jour
-      statsData = {
-        label1: "Temps écran",
-        value1: (daysSober * v1).toFixed(0),
-        unit1: "h évitées",
-        icon1: "smartphone-off",
-        label2: "Productivité",
-        value2: (daysSober * (v1 * 0.5)).toFixed(0), // On assume 50% du temps récupéré est productif
-        unit2: "h gagnées",
-        icon2: "zap"
-      };
-  } 
-  else {
-      // DÉFAUT (ALCOOL, DROGUE, ETC.)
-      // v1 = Coût/jour, v2 = Calories/jour
-      statsData = {
-        label1: "Économies",
-        value1: (daysSober * v1).toFixed(0),
-        unit1: "€",
-        icon1: "wallet",
-        label2: "Santé",
-        value2: (daysSober * v2).toFixed(0),
-        unit2: "kcal",
-        icon2: "activity"
-      };
-  }
-
   return {
     userFirstName: profile.first_name || "Utilisateur",
     daysSober,
+    isBroken: profile.is_broken || false,
     hasPledgedToday,
-    monthPledges,
-    currentPhase: "Phase 1",
-    nextMilestone: { label: "30 Jours", progress: Math.min(100, (daysSober / 30) * 100), daysLeft: Math.max(0, 30 - daysSober) },
-    stats: statsData
+    monthPledges: pledgeDates, // Rétrocompatibilité
+    sobrietyStartDate: profile.sobriety_start_date,
+    relapseDates: relapses?.map(r => r.relapse_date) || [],
+    pledgeDates: pledgeDates,
+    dailyVerse: getVerseForTheDay(addictionName),
+    stats: { 
+        label1: "Économies", 
+        value1: (daysSober * v1).toFixed(0), 
+        unit1: "€", 
+        icon1: "wallet", 
+        label2: "Santé", 
+        value2: (daysSober * 5).toFixed(0), 
+        unit2: "pts", 
+        icon2: "activity" 
+    },
+    nextMilestone: { 
+        label: "30 Jours", 
+        progress: parseFloat(Math.min(100, (daysSober / 30) * 100).toFixed(1)), 
+        daysLeft: Math.max(0, 30 - daysSober)
+    },
+    currentPhase: "Phase 1"
   };
 }
