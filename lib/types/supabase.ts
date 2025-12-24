@@ -87,6 +87,45 @@ export type Database = {
         }
         Relationships: []
       }
+      group_messages: {
+        Row: {
+          addiction_type_id: string
+          content: string
+          created_at: string | null
+          id: string
+          user_id: string
+        }
+        Insert: {
+          addiction_type_id: string
+          content: string
+          created_at?: string | null
+          id?: string
+          user_id: string
+        }
+        Update: {
+          addiction_type_id?: string
+          content?: string
+          created_at?: string | null
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_messages_addiction_type_id_fkey"
+            columns: ["addiction_type_id"]
+            isOneToOne: false
+            referencedRelation: "addiction_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_messages_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       prayer_requests: {
         Row: {
           addiction_type_id: string
@@ -94,6 +133,7 @@ export type Database = {
           created_at: string | null
           id: string
           is_resolved: boolean | null
+          is_shared: boolean | null
           user_id: string
         }
         Insert: {
@@ -102,6 +142,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_resolved?: boolean | null
+          is_shared?: boolean | null
           user_id: string
         }
         Update: {
@@ -110,6 +151,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_resolved?: boolean | null
+          is_shared?: boolean | null
           user_id?: string
         }
         Relationships: [
@@ -119,6 +161,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "addiction_types"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prayer_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -151,6 +200,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "prayer_requests"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prayer_supports_supporter_id_fkey"
+            columns: ["supporter_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -255,6 +311,7 @@ export type Database = {
       user_profiles: {
         Row: {
           addiction_type_id: string | null
+          avatar_url: string | null
           birth_date: string | null
           can_change_addiction_after: string | null
           created_at: string | null
@@ -268,6 +325,7 @@ export type Database = {
           habits: Json | null
           id: string
           is_broken: boolean | null
+          is_in_community: boolean | null
           is_onboarded: boolean | null
           last_name: string | null
           pastor_phone: string | null
@@ -281,6 +339,7 @@ export type Database = {
         }
         Insert: {
           addiction_type_id?: string | null
+          avatar_url?: string | null
           birth_date?: string | null
           can_change_addiction_after?: string | null
           created_at?: string | null
@@ -294,6 +353,7 @@ export type Database = {
           habits?: Json | null
           id?: string
           is_broken?: boolean | null
+          is_in_community?: boolean | null
           is_onboarded?: boolean | null
           last_name?: string | null
           pastor_phone?: string | null
@@ -307,6 +367,7 @@ export type Database = {
         }
         Update: {
           addiction_type_id?: string | null
+          avatar_url?: string | null
           birth_date?: string | null
           can_change_addiction_after?: string | null
           created_at?: string | null
@@ -320,6 +381,7 @@ export type Database = {
           habits?: Json | null
           id?: string
           is_broken?: boolean | null
+          is_in_community?: boolean | null
           is_onboarded?: boolean | null
           last_name?: string | null
           pastor_phone?: string | null

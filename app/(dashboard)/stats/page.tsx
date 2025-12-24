@@ -40,8 +40,11 @@ export default async function StatsPage(props: StatsPageProps) {
 
   const { chartData, kpi, userHabits } = data;
 
-  const userTriggers = EMOTIONAL_TRIGGERS.filter(t => userHabits.emotional_triggers.includes(t.id));
-  const userContexts = CONTEXT_HABITS.filter(c => userHabits.context_habits.includes(c.id));
+  const safeTriggers = userHabits?.emotional_triggers || [];
+  const safeContexts = userHabits?.context_habits || [];
+
+  const userTriggers = EMOTIONAL_TRIGGERS.filter(t => safeTriggers.includes(t.id));
+  const userContexts = CONTEXT_HABITS.filter(c => safeContexts.includes(c.id));
 
   // --- Préparation des données Chart (Consommation) ---
   const data1 = chartData.map(d => d.val1);
@@ -232,12 +235,12 @@ export default async function StatsPage(props: StatsPageProps) {
         </div>
 
         {/* BLOC 4 : PRIÈRES & SOUTIEN */}
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col h-full">
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col h-full">                  
+            
             <h3 className="font-bold text-gray-900 mb-6 flex items-center gap-2">
                 <Handshake size={18} className="text-purple-500"/> 
                 Vie de Prière
             </h3>
-            
             <div className="flex-1 flex flex-col justify-center gap-4">
                 <div className="bg-purple-50 rounded-2xl p-5 flex items-center justify-between transition-transform hover:scale-[1.02]">
                     <div>
