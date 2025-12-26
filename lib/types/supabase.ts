@@ -87,6 +87,30 @@ export type Database = {
         }
         Relationships: []
       }
+      earned_badges: {
+        Row: {
+          badge_code: string
+          created_at: string
+          id: string
+          metadata: Json | null
+          user_id: string
+        }
+        Insert: {
+          badge_code: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          user_id: string
+        }
+        Update: {
+          badge_code?: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       group_messages: {
         Row: {
           addiction_type_id: string
@@ -125,6 +149,71 @@ export type Database = {
             referencedColumns: ["user_id"]
           },
         ]
+      }
+      joker_usage_log: {
+        Row: {
+          days_restored: number
+          id: string
+          relapse_id: string
+          used_at: string
+          user_id: string
+        }
+        Insert: {
+          days_restored: number
+          id?: string
+          relapse_id: string
+          used_at?: string
+          user_id: string
+        }
+        Update: {
+          days_restored?: number
+          id?: string
+          relapse_id?: string
+          used_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "joker_usage_log_relapse_id_fkey"
+            columns: ["relapse_id"]
+            isOneToOne: false
+            referencedRelation: "relapses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          created_at: string
+          id: string
+          is_read: boolean | null
+          link: string | null
+          message: string
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_read?: boolean | null
+          link?: string | null
+          message: string
+          title: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_read?: boolean | null
+          link?: string | null
+          message?: string
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       prayer_requests: {
         Row: {
@@ -210,29 +299,62 @@ export type Database = {
           },
         ]
       }
+      push_subscriptions: {
+        Row: {
+          created_at: string
+          id: string
+          subscription: Json
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          subscription: Json
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          subscription?: Json
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       relapses: {
         Row: {
+          context: string | null
           created_at: string | null
           id: string
+          mood_before: string | null
           note: string | null
           previous_streak_days: number
           relapse_date: string
+          trigger_type: string | null
           user_id: string | null
         }
         Insert: {
+          context?: string | null
           created_at?: string | null
           id?: string
+          mood_before?: string | null
           note?: string | null
           previous_streak_days: number
           relapse_date?: string
+          trigger_type?: string | null
           user_id?: string | null
         }
         Update: {
+          context?: string | null
           created_at?: string | null
           id?: string
+          mood_before?: string | null
           note?: string | null
           previous_streak_days?: number
           relapse_date?: string
+          trigger_type?: string | null
           user_id?: string | null
         }
         Relationships: []
@@ -271,6 +393,110 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subscriptions: {
+        Row: {
+          cancel_at: string | null
+          cancel_at_period_end: boolean | null
+          canceled_at: string | null
+          created: string
+          current_period_end: string
+          current_period_start: string
+          ended_at: string | null
+          id: string
+          metadata: Json | null
+          price_id: string | null
+          quantity: number | null
+          status: string | null
+          trial_end: string | null
+          trial_start: string | null
+          user_id: string
+        }
+        Insert: {
+          cancel_at?: string | null
+          cancel_at_period_end?: boolean | null
+          canceled_at?: string | null
+          created?: string
+          current_period_end: string
+          current_period_start: string
+          ended_at?: string | null
+          id: string
+          metadata?: Json | null
+          price_id?: string | null
+          quantity?: number | null
+          status?: string | null
+          trial_end?: string | null
+          trial_start?: string | null
+          user_id: string
+        }
+        Update: {
+          cancel_at?: string | null
+          cancel_at_period_end?: boolean | null
+          canceled_at?: string | null
+          created?: string
+          current_period_end?: string
+          current_period_start?: string
+          ended_at?: string | null
+          id?: string
+          metadata?: Json | null
+          price_id?: string | null
+          quantity?: number | null
+          status?: string | null
+          trial_end?: string | null
+          trial_start?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_challenges: {
+        Row: {
+          challenge_id: string
+          completed_at: string | null
+          created_at: string | null
+          id: string
+          last_notified_at: string | null
+          last_reminder_at: string | null
+          started_at: string | null
+          status: Database["public"]["Enums"]["challenge_status"] | null
+          unlock_at: string | null
+          user_id: string
+          week_number: number
+        }
+        Insert: {
+          challenge_id: string
+          completed_at?: string | null
+          created_at?: string | null
+          id?: string
+          last_notified_at?: string | null
+          last_reminder_at?: string | null
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["challenge_status"] | null
+          unlock_at?: string | null
+          user_id: string
+          week_number: number
+        }
+        Update: {
+          challenge_id?: string
+          completed_at?: string | null
+          created_at?: string | null
+          id?: string
+          last_notified_at?: string | null
+          last_reminder_at?: string | null
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["challenge_status"] | null
+          unlock_at?: string | null
+          user_id?: string
+          week_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_challenges_challenge_id_fkey"
+            columns: ["challenge_id"]
+            isOneToOne: false
+            referencedRelation: "weekly_challenges"
             referencedColumns: ["id"]
           },
         ]
@@ -328,11 +554,15 @@ export type Database = {
           is_in_community: boolean | null
           is_onboarded: boolean | null
           last_name: string | null
+          notification_settings: Json | null
           pastor_phone: string | null
           pastor_phones: string[] | null
           phone_number: string | null
           sobriety_days_at_change: number | null
           sobriety_start_date: string | null
+          streak_joker_used_at: string | null
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
           updated_at: string | null
           user_id: string | null
           username: string | null
@@ -356,11 +586,15 @@ export type Database = {
           is_in_community?: boolean | null
           is_onboarded?: boolean | null
           last_name?: string | null
+          notification_settings?: Json | null
           pastor_phone?: string | null
           pastor_phones?: string[] | null
           phone_number?: string | null
           sobriety_days_at_change?: number | null
           sobriety_start_date?: string | null
+          streak_joker_used_at?: string | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
           updated_at?: string | null
           user_id?: string | null
           username?: string | null
@@ -384,11 +618,15 @@ export type Database = {
           is_in_community?: boolean | null
           is_onboarded?: boolean | null
           last_name?: string | null
+          notification_settings?: Json | null
           pastor_phone?: string | null
           pastor_phones?: string[] | null
           phone_number?: string | null
           sobriety_days_at_change?: number | null
           sobriety_start_date?: string | null
+          streak_joker_used_at?: string | null
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
           updated_at?: string | null
           user_id?: string | null
           username?: string | null
@@ -469,12 +707,101 @@ export type Database = {
         }
         Relationships: []
       }
+      verses: {
+        Row: {
+          category: string | null
+          content: string
+          created_at: string
+          id: string
+          reference: string
+        }
+        Insert: {
+          category?: string | null
+          content: string
+          created_at?: string
+          id?: string
+          reference: string
+        }
+        Update: {
+          category?: string | null
+          content?: string
+          created_at?: string
+          id?: string
+          reference?: string
+        }
+        Relationships: []
+      }
+      weekly_challenges: {
+        Row: {
+          action_text: string
+          addiction_type_id: string | null
+          challenge_type: Database["public"]["Enums"]["challenge_kind"]
+          created_at: string | null
+          description: string
+          id: string
+          scripture_reference: string | null
+          scripture_text: string | null
+          title: string
+          week_number: number
+        }
+        Insert: {
+          action_text: string
+          addiction_type_id?: string | null
+          challenge_type: Database["public"]["Enums"]["challenge_kind"]
+          created_at?: string | null
+          description: string
+          id?: string
+          scripture_reference?: string | null
+          scripture_text?: string | null
+          title: string
+          week_number: number
+        }
+        Update: {
+          action_text?: string
+          addiction_type_id?: string | null
+          challenge_type?: Database["public"]["Enums"]["challenge_kind"]
+          created_at?: string | null
+          description?: string
+          id?: string
+          scripture_reference?: string | null
+          scripture_text?: string | null
+          title?: string
+          week_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "weekly_challenges_addiction_type_id_fkey"
+            columns: ["addiction_type_id"]
+            isOneToOne: false
+            referencedRelation: "addiction_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
-      [_ in never]: never
+      user_stats_daily: {
+        Row: {
+          journal_count: number | null
+          mood_entries_count: number | null
+          pledge_count: number | null
+          relapse_count: number | null
+          stat_date: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
+      award_badge_safe: {
+        Args: { p_badge_code: string; p_user_id: string }
+        Returns: boolean
+      }
       calculate_sobriety_days: { Args: { p_user_id: string }; Returns: number }
+      can_use_joker: {
+        Args: { p_relapse_id: string; p_user_id: string }
+        Returns: Json
+      }
       get_current_streak: {
         Args: { p_user_id: string }
         Returns: {
@@ -483,9 +810,11 @@ export type Database = {
           streak_id: string
         }[]
       }
+      is_valid_sobriety_date: { Args: { date_val: string }; Returns: boolean }
     }
     Enums: {
-      [_ in never]: never
+      challenge_kind: "specific" | "transversal"
+      challenge_status: "joined" | "completed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -615,6 +944,9 @@ export const Constants = {
     Enums: {},
   },
   public: {
-    Enums: {},
+    Enums: {
+      challenge_kind: ["specific", "transversal"],
+      challenge_status: ["joined", "completed"],
+    },
   },
 } as const

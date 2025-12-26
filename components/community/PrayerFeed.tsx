@@ -10,7 +10,6 @@ interface PrayerFeedProps {
 }
 
 export default function PrayerFeed({ initialData }: PrayerFeedProps) {
-  // On pourrait utiliser un state pour gérer une pagination locale, mais gardons simple pour l'instant
   const [requests] = useState(initialData);
 
   return (
@@ -34,20 +33,30 @@ function PrayerCard({ request }: { request: PrayerRequestWithProfile }) {
   const [isReplying, setIsReplying] = useState(false);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
-  const [hasSupported, setHasSupported] = useState(false); // État local temporaire
+  
+  // État local pour gérer l'UI optimiste
+  const [hasSupported, setHasSupported] = useState(false);
 
   const handleSupport = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!message.trim()) return;
+    if (!message.trim() || isPending) return;
+
+    // 🚀 OPTIMISTIC UPDATE
+    setHasSupported(true);
+    setIsReplying(false);
+    const previousMessage = message;
+    setMessage(""); // Reset input
 
     startTransition(async () => {
-      const result = await sendPrayerSupport(request.id, message);
+      const result = await sendPrayerSupport(request.id, previousMessage);
+      
       if (result.success) {
         toast.success("Votre soutien a été envoyé !");
-        setHasSupported(true);
-        setIsReplying(false);
-        setMessage("");
       } else {
+        // 🚨 ROLLBACK en cas d'erreur
+        setHasSupported(false);
+        setIsReplying(true);
+        setMessage(previousMessage);
         toast.error("Erreur lors de l'envoi.");
       }
     });
@@ -106,14 +115,14 @@ function PrayerCard({ request }: { request: PrayerRequestWithProfile }) {
             {isReplying ? "Annuler" : "Soutenir"}
             </button>
         ) : (
-            <span className="text-xs font-bold text-green-600 bg-green-50 px-3 py-1 rounded-full border border-green-100">
+            <span className="text-xs font-bold text-green-600 bg-green-50 px-3 py-1 rounded-full border border-green-100 animate-in zoom-in">
                 Soutien envoyé ✓
             </span>
         )}
       </div>
 
       {/* Zone de réponse */}
-      {isReplying && (
+      {isReplying && !hasSupported && (
         <form onSubmit={handleSupport} className="mt-4 animate-in fade-in slide-in-from-top-2">
           <textarea
             value={message}

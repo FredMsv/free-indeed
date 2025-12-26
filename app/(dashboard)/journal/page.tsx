@@ -1,17 +1,16 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { Calendar, ArrowLeft, BookOpen, Trophy, AlertTriangle, RefreshCcw, Heart, NotebookPen, LucideIcon } from "lucide-react";
-import { SupabaseClient } from "@supabase/supabase-js";
-import { MOOD_MAP, MoodKey } from "@/lib/constants/moods";
+import { MOOD_MAP } from "@/lib/constants/moods";
 import { JournalForm } from "@/components/dashboard/JournalForm";
-import { getTodayJournal } from "@/lib/actions/journal-actions";
+import { getTodayJournal, getJournalHistory } from "@/lib/actions/journal-actions";
 import { DeleteJournalButton } from "@/components/journal/DeleteJournalButton";
 import Link from "next/link";
 
 interface JournalEntry {
   id: string;
   journal_date: string;
-  mood: MoodKey;
+  mood: string;
   content: string | null;
   context: string | null;
   created_at: string;
@@ -31,21 +30,14 @@ export default async function JournalPage() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  const client = supabase as SupabaseClient;
-  
-  const [todayEntry, { data }] = await Promise.all([
+  // On récupère les données du dashboard ET le journal du jour en parallèle pour optimiser
+  // On limite l'historique aux 10 dernières entrées pour la performance
+  const [todayEntry, historyData] = await Promise.all([
     getTodayJournal(),
-    client
-      .from('user_journals')
-      .select('*')
-      .eq('user_id', user.id)
-      // Tri principal : Date du journal (Descendant)
-      .order('journal_date', { ascending: false })
-      // Tri secondaire : Heure de création (Descendant) pour les entrées du même jour
-      .order('created_at', { ascending: false })
+    getJournalHistory(10)
   ]);
 
-  const history = (data as unknown as JournalEntry[]) || [];
+  const history = (historyData as unknown as JournalEntry[]) || [];
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-10 px-4 sm:px-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -76,7 +68,7 @@ export default async function JournalPage() {
         <section className="space-y-4">
           <h2 className="font-bold text-gray-900 flex items-center gap-2 ml-2">
             <Calendar size={18} className="text-blue-500" /> 
-            Historique
+            Historique (10 derniers)
           </h2>
           
           {history.length === 0 ? (
@@ -86,6 +78,7 @@ export default async function JournalPage() {
           ) : (
             <div className="grid grid-cols-1 gap-4">
               {history.map((entry) => {
+
                 const mood = MOOD_MAP[entry.mood] || MOOD_MAP.neutral;
                 // Récupération de la config du contexte (ou par défaut Note)
                 const contextConfig = entry.context && CONTEXT_MAP[entry.context] 

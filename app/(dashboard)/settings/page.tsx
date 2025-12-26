@@ -3,11 +3,11 @@ import {
   ChevronRight, 
   Activity, 
   User, 
-  Bell, 
   ShieldAlert, 
   LogOut 
 } from "lucide-react";
 import { signOutAction } from "@/lib/actions/auth-actions";
+import NotificationManager from "@/components/settings/NotificationManager";
 
 export default function SettingsPage() {
   
@@ -38,18 +38,9 @@ export default function SettingsPage() {
       title: "Application",
       items: [
         {
-          label: "Notifications (Bientôt)",
-          desc: "Rappels d'engagement et alertes",
-          href: "#",
-          icon: Bell,
-          color: "text-gray-400",
-          bgColor: "bg-gray-100",
-          disabled: true
-        },
-        {
           label: "Contacts d'urgence",
           desc: "Gérer vos numéros SOS",
-          href: "/sos", // On peut rediriger vers la page SOS existante
+          href: "/sos",
           icon: ShieldAlert,
           color: "text-red-600",
           bgColor: "bg-red-100"
@@ -65,6 +56,14 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-bold text-gray-900">Paramètres</h1>
         <p className="text-gray-500">Gérez vos préférences et votre compte.</p>
       </div>
+
+      {/* SECTION NOTIFICATIONS (Nouveau) */}
+      <section>
+        <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3 ml-1">
+          Préférences
+        </h2>
+        <NotificationManager />
+      </section>
 
       <div className="space-y-6">
         {settingsGroups.map((group, idx) => (
@@ -93,7 +92,7 @@ export default function SettingsPage() {
                         {item.label}
                         {item.disabled && (
                           <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-bold uppercase">
-                            Bientôt
+                             Bientôt
                           </span>
                         )}
                       </div>
@@ -113,7 +112,6 @@ export default function SettingsPage() {
 
         {/* Bouton Déconnexion (Zone Danger) */}
         <div className="pt-4">
-            
             <form action={signOutAction}>
                 <button 
                     type="submit"

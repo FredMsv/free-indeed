@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { CustomDatabase } from '@/lib/types/custom-database' // Import du type étendu
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({
@@ -8,7 +9,7 @@ export async function updateSession(request: NextRequest) {
     },
   })
 
-  const supabase = createServerClient(
+  const supabase = createServerClient<CustomDatabase>( // Typage avec CustomDatabase
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -33,21 +34,21 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  // Rafraîchir la session si elle existe
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: { user }, error } = await supabase.auth.getUser()
+  
+  if (error && !error.message.includes('Refresh Token Not Found')) {
+     console.error("Middleware Auth Error:", error.message)
+  }
 
-  // ROUTE PROTECTION LOGIC
   const url = request.nextUrl.clone()
   
-  // 1. Si utilisateur NON connecté essaie d'accéder au dashboard/onboarding -> Login
+  // Protection des routes
   if (!user && (url.pathname.startsWith('/dashboard') || url.pathname.startsWith('/onboarding'))) {
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  // 2. Si utilisateur CONNECTÉ
   if (user) {
-    // On vérifie s'il a fini l'onboarding
     const { data: profile } = await supabase
       .from('user_profiles')
       .select('is_onboarded')
@@ -56,23 +57,16 @@ export async function updateSession(request: NextRequest) {
 
     const isOnboarded = profile?.is_onboarded ?? false
 
-    // Cas A : Il est sur une page d'auth (login/signup) -> Redirection intelligente
-    if (url.pathname === '/login' || url.pathname === '/signup') {
-      if (isOnboarded) {
-        url.pathname = '/dashboard'
-      } else {
-        url.pathname = '/onboarding'
-      }
+    if (url.pathname === '/login' || url.pathname === '/signup' || url.pathname === '/forgot-password') {
+      url.pathname = isOnboarded ? '/dashboard' : '/onboarding'
       return NextResponse.redirect(url)
     }
 
-    // Cas B : Il essaie d'aller au dashboard sans être onboardé
     if (url.pathname.startsWith('/dashboard') && !isOnboarded) {
       url.pathname = '/onboarding'
       return NextResponse.redirect(url)
     }
 
-    // Cas C : Il essaie de refaire l'onboarding alors qu'il a fini
     if (url.pathname.startsWith('/onboarding') && isOnboarded) {
       url.pathname = '/dashboard'
       return NextResponse.redirect(url)

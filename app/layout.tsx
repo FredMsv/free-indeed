@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Toaster } from "sonner";
+import { ToastProvider } from "@/components/ui/toast-provider";
 
 export const metadata: Metadata = {
   title: "Free Indeed",
@@ -13,11 +13,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr" suppressHydrationWarning={true}>
-      <body className="antialiased" suppressHydrationWarning={true}>
+    // suppressHydrationWarning doit être sur <html>
+    <html lang="fr" suppressHydrationWarning>
+      {/* AJOUTEZ suppressHydrationWarning sur <body> également 
+         C'est souvent là que les extensions (LastPass, Grammarly, etc.) injectent des attributs
+      */}
+      <body className="antialiased" suppressHydrationWarning>
         {children}
-        {/* ✅ AJOUT DU TOASTER SONNER */}
-        <Toaster position="top-center" richColors />
+        <ToastProvider />
       </body>
     </html>
   );

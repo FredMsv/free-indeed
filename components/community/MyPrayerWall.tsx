@@ -1,18 +1,30 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Lock, Globe, Plus, MessageSquare, ChevronDown, ChevronUp } from "lucide-react";
-import { createPrayerRequest, MyRequestWithSupports } from "@/lib/actions/prayer-actions";
+import { Lock, Globe, Plus, MessageSquare, ChevronDown, ChevronUp, Trash2, Loader2 } from "lucide-react";
+import { createPrayerRequest, MyRequestWithSupports, deletePrayerRequest } from "@/lib/actions/prayer-actions";
 import { toast } from "sonner";
 
 interface MyPrayerWallProps {
   initialData: MyRequestWithSupports[];
+  isInCommunity: boolean;
 }
 
-export default function MyPrayerWall({ initialData }: MyPrayerWallProps) {
+export default function MyPrayerWall({ initialData, isInCommunity }: MyPrayerWallProps) {
   const [content, setContent] = useState("");
   const [isShared, setIsShared] = useState(false); // Par défaut privé
   const [isPending, startTransition] = useTransition();
+
+  // Logique de blocage : On ne peut pas partager si on n'est pas dans le groupe
+  const handleToggleVisibility = () => {
+    if (!isInCommunity && !isShared) {
+      toast.error("Rejoignez le groupe pour partager vos prières.", {
+        description: "Allez dans l'onglet 'Groupe' pour activer l'accès."
+      });
+      return;
+    }
+    setIsShared(!isShared);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,8 +62,8 @@ export default function MyPrayerWall({ initialData }: MyPrayerWallProps) {
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             {/* Toggle Visibilité */}
             <div 
-                className="flex items-center gap-3 cursor-pointer bg-gray-50 px-3 py-2 rounded-xl border border-gray-200 hover:bg-gray-100 transition-colors"
-                onClick={() => setIsShared(!isShared)}
+                className={`flex items-center gap-3 cursor-pointer bg-gray-50 px-3 py-2 rounded-xl border border-gray-200 transition-colors ${!isInCommunity ? 'opacity-70' : 'hover:bg-gray-100'}`}
+                onClick={handleToggleVisibility}
             >
                 <div className={`
                     w-10 h-6 rounded-full p-1 transition-colors duration-300 flex items-center
@@ -81,7 +93,7 @@ export default function MyPrayerWall({ initialData }: MyPrayerWallProps) {
 
       {/* LISTE DES PRIÈRES */}
       <div className="space-y-4">
-        <h3 className="font-bold text-gray-900 px-2">Mon Historique</h3>
+        <h3 className="font-bold text-gray-900 px-2">Mon Historique (10 derniers)</h3>
         {initialData.length === 0 ? (
           <div className="text-center py-10 text-gray-400 text-sm">
             Votre mur est vide. Commencez par écrire une pensée.
@@ -99,7 +111,21 @@ export default function MyPrayerWall({ initialData }: MyPrayerWallProps) {
 // Sous-composant pour gérer l'affichage des réponses (Accordéon)
 function MyPrayerItem({ item }: { item: MyRequestWithSupports }) {
     const [showSupports, setShowSupports] = useState(false);
+    const [isDeleting, startDeleteTransition] = useTransition();
     const hasSupports = item.supports.length > 0;
+
+    const handleDelete = () => {
+        if (!confirm("Voulez-vous vraiment supprimer cette prière ?")) return;
+        
+        startDeleteTransition(async () => {
+            const result = await deletePrayerRequest(item.id);
+            if (result.success) {
+                toast.success("Prière supprimée");
+            } else {
+                toast.error("Impossible de supprimer");
+            }
+        });
+    };
 
     return (
         <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm relative group">
@@ -121,9 +147,9 @@ function MyPrayerItem({ item }: { item: MyRequestWithSupports }) {
                 {item.content}
             </p>
 
-            {/* Section Soutiens (Si public et a des réponses) */}
-            {item.is_shared && (
-                <div className="border-t border-gray-50 pt-3">
+            {/* Actions : Toggle Support / Supprimer */}
+            <div className="border-t border-gray-50 pt-3 flex items-center justify-between">
+                {item.is_shared ? (
                     <button 
                         disabled={!hasSupports}
                         onClick={() => setShowSupports(!showSupports)}
@@ -137,27 +163,39 @@ function MyPrayerItem({ item }: { item: MyRequestWithSupports }) {
                             showSupports ? <ChevronUp size={14}/> : <ChevronDown size={14}/>
                         )}
                     </button>
+                ) : (
+                    <span className="text-xs text-gray-300 italic">Visible uniquement par vous</span>
+                )}
 
-                    {/* Liste des messages reçus (Accordéon) */}
-                    {showSupports && (
-                        <div className="mt-3 space-y-2 pl-4 border-l-2 border-purple-100 animate-in slide-in-from-top-2 fade-in">
-                            {item.supports.map((support) => (
-                                <div key={support.id} className="bg-purple-50/50 p-3 rounded-xl text-sm">
-                                    <div className="flex justify-between items-center mb-1">
-                                        <span className="font-bold text-purple-700 text-xs">
-                                            {support.supporter?.username || "Un frère"}
-                                        </span>
-                                        <span className="text-[10px] text-purple-400">
-                                            {new Date(support.created_at).toLocaleDateString()}
-                                        </span>
-                                    </div>
-                                    <p className="text-gray-700 text-xs italic">
-                                        &quot;{support.message}&quot;
-                                    </p>
-                                </div>
-                            ))}
+                {/* Bouton Supprimer */}
+                <button
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                    className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+                    title="Supprimer"
+                >
+                    {isDeleting ? <Loader2 size={14} className="animate-spin text-red-500"/> : <Trash2 size={14}/>}
+                </button>
+            </div>
+
+            {/* Liste des messages reçus (Accordéon) */}
+            {item.is_shared && showSupports && (
+                <div className="mt-3 space-y-2 pl-4 border-l-2 border-purple-100 animate-in slide-in-from-top-2 fade-in">
+                    {item.supports.map((support) => (
+                        <div key={support.id} className="bg-purple-50/50 p-3 rounded-xl text-sm">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="font-bold text-purple-700 text-xs">
+                                    {support.supporter?.username || "Un frère"}
+                                </span>
+                                <span className="text-[10px] text-purple-400">
+                                   {new Date(support.created_at).toLocaleDateString()}
+                                </span>
+                            </div>
+                            <p className="text-gray-700 text-xs italic">
+                                &quot;{support.message}&quot;
+                            </p>
                         </div>
-                    )}
+                    ))}
                 </div>
             )}
         </div>

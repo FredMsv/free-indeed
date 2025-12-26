@@ -69,6 +69,7 @@ export default function CommunityInterface({ myRequests, communityRequests, isIn
                 <div className="w-16 h-16 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
                     <Users size={32} />
                 </div>
+                
                 <div>
                     <h3 className="text-xl font-bold text-gray-900 mb-2">Rejoindre le Cercle</h3>
                     <p className="text-gray-500 text-sm max-w-md mx-auto leading-relaxed">
@@ -77,6 +78,7 @@ export default function CommunityInterface({ myRequests, communityRequests, isIn
                         En rejoignant, vous acceptez de partager ce fardeau avec bienveillance et confidentialité.
                     </p>
                 </div>
+            
                 <button 
                     onClick={handleJoin}
                     disabled={isJoining}
@@ -120,7 +122,8 @@ export default function CommunityInterface({ myRequests, communityRequests, isIn
       {/* CONTENU MON MUR */}
       {activeTab === 'wall' && (
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <MyPrayerWall initialData={myRequests} />
+            {/* ✅ CORRECTION : On passe la prop isInCommunity */}
+            <MyPrayerWall initialData={myRequests} isInCommunity={isInCommunity} />
         </div>
       )}
     </div>

@@ -1,7 +1,11 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { logger } from "@/lib/utils/logger";
+import { ActionResponse } from "./dashboard-actions";
+import { GroupMessageQueryResult } from "@/lib/types/query-types";
 
+// Interface Front-end
 export interface GroupMessage {
   id: string;
   content: string;
@@ -14,27 +18,11 @@ export interface GroupMessage {
   is_me?: boolean;
 }
 
-// Interface interne pour typer le retour brut de Supabase
-interface RawMessage {
-  id: string;
-  content: string;
-  created_at: string;
-  user_id: string;
-  user_profiles: {
-    username: string | null;
-    avatar_url: string | null;
-  } | null;
-}
-
-/**
- * Récupère les 50 derniers messages du groupe de l'utilisateur
- */
 export async function getInitialMessages() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
-  // 1. Récupérer le groupe (addiction_id)
   const { data: profile } = await supabase
     .from('user_profiles')
     .select('addiction_type_id')
@@ -43,15 +31,10 @@ export async function getInitialMessages() {
 
   if (!profile?.addiction_type_id) return [];
 
-  // 2. Récupérer les messages
-  // CORRECTION : On sélectionne 'user_profiles' car c'est le nom de la table liée
   const { data, error } = await supabase
     .from('group_messages')
     .select(`
-      id,
-      content,
-      created_at,
-      user_id,
+      *,
       user_profiles (
         username,
         avatar_url
@@ -62,51 +45,62 @@ export async function getInitialMessages() {
     .limit(50);
 
   if (error || !data) {
-    console.error("Erreur chat:", error);
+    logger.error("Error fetching chat", error);
     return [];
   }
 
-  // 3. Transformation des données
-  // On mappe 'user_profiles' vers 'users' pour respecter votre interface Frontend
-  const rawMessages = data as unknown as RawMessage[];
+  // Validation de type sécurisée
+  const rawMessages = data as unknown as GroupMessageQueryResult[];
 
-  return rawMessages.reverse().map(msg => ({
-    id: msg.id,
-    content: msg.content,
-    created_at: msg.created_at,
-    user_id: msg.user_id,
-    users: msg.user_profiles, // Mapping ici
-    is_me: msg.user_id === user.id
-  })) as GroupMessage[];
+  return rawMessages.reverse().map(msg => {
+    // Gestion du cas où le profil utilisateur a été supprimé
+    const userInfo = msg.user_profiles || { username: "Utilisateur inconnu", avatar_url: null };
+
+    return {
+      id: msg.id,
+      content: msg.content,
+      created_at: msg.created_at || new Date().toISOString(),
+      user_id: msg.user_id,
+      users: userInfo,
+      is_me: msg.user_id === user.id
+    } satisfies GroupMessage;
+  });
 }
 
-/**
- * Envoie un nouveau message
- */
-export async function sendMessage(content: string) {
+export async function sendMessage(content: string): Promise<ActionResponse> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
   
-  if (!user) return { success: false, error: "Non connecté" };
-  if (!content.trim()) return { success: false, error: "Message vide" };
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) return { success: false, error: "Non connecté" };
+    
+    if (!content.trim()) return { success: false, error: "Message vide" };
 
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('addiction_type_id')
-    .eq('user_id', user.id)
-    .single();
+    const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('addiction_type_id')
+        .eq('user_id', user.id)
+        .single();
 
-  if (!profile?.addiction_type_id) return { success: false, error: "Profil introuvable" };
+    if (!profile?.addiction_type_id) return { success: false, error: "Profil introuvable" };
 
-  const { error } = await supabase
-    .from('group_messages')
-    .insert({
-      user_id: user.id,
-      addiction_type_id: profile.addiction_type_id,
-      content: content.trim()
-    });
+    const { error } = await supabase
+        .from('group_messages')
+        .insert({
+          user_id: user.id,
+          addiction_type_id: profile.addiction_type_id,
+          content: content.trim()
+        });
 
-  if (error) return { success: false, error: error.message };
-  
-  return { success: true };
+    if (error) {
+        logger.error("Error sending message", error, { userId: user.id });
+        return { success: false, error: "Echec de l'envoi." };
+    }
+    
+    return { success: true };
+
+  } catch (error) {
+    logger.error("Exception sendMessage", error);
+    return { success: false, error: "Erreur serveur." };
+  }
 }

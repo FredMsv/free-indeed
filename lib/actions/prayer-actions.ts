@@ -2,8 +2,11 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { logger } from "@/lib/utils/logger";
+import { ActionResponse } from "./dashboard-actions";
+import { CommunityPrayerQueryResult, MyPrayerQueryResult } from "@/lib/types/query-types";
 
-// --- TYPES DE SORTIE ---
+// ... (Les interfaces PrayerRequestWithProfile et MyRequestWithSupports restent identiques) ...
 export interface PrayerRequestWithProfile {
   id: string;
   content: string;
@@ -32,8 +35,7 @@ export interface MyRequestWithSupports {
   }[];
 }
 
-// --- 1. RÉCUPÉRER LE MUR (COMMUNAUTÉ) ---
-export async function getCommunityPrayerRequests() {
+export async function getCommunityPrayerRequests(limit = 10) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
@@ -46,15 +48,10 @@ export async function getCommunityPrayerRequests() {
 
   if (!profile?.addiction_type_id) return [];
 
-  // CORRECTION : On demande 'user_profiles' au lieu de 'users'
   const { data, error } = await supabase
     .from('prayer_requests')
     .select(`
-      id,
-      content,
-      created_at,
-      user_id,
-      is_shared,
+      *,
       user_profiles (
         username,
         avatar_url
@@ -64,114 +61,179 @@ export async function getCommunityPrayerRequests() {
     .eq('addiction_type_id', profile.addiction_type_id)
     .eq('is_shared', true)
     .neq('user_id', user.id)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(limit);
 
   if (error) {
-    console.error("Erreur fetch prayers:", error);
+    logger.error("Error fetching community prayers", error);
     return [];
   }
 
-  // Mapping : on transforme 'user_profiles' en 'users' pour le frontend
-  return data.map((item) => ({
-    ...item,
+  const rawData = data as unknown as CommunityPrayerQueryResult[];
+  return rawData.map((item) => {
+    const count = (item.prayer_supports && item.prayer_supports.length > 0) 
+      ? item.prayer_supports[0].count 
+      : 0;
 
-    users: item.user_profiles, 
+    const userInfo = item.user_profiles || { username: "Membre", avatar_url: null };
 
-    support_count: item.prayer_supports?.[0]?.count || 0
-  })) as unknown as PrayerRequestWithProfile[];
+    return {
+      id: item.id,
+      content: item.content,
+      created_at: item.created_at || new Date().toISOString(),
+      user_id: item.user_id,
+      is_shared: item.is_shared || false,
+      users: userInfo,
+      support_count: count
+    } satisfies PrayerRequestWithProfile;
+  });
 }
 
-// --- 2. RÉCUPÉRER MES DEMANDES ---
-export async function getMyPrayerRequests() {
+export async function getMyPrayerRequests(limit = 10) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
-  // CORRECTION : Ici aussi, pour les soutiens, on demande 'user_profiles'
   const { data, error } = await supabase
     .from('prayer_requests')
     .select(`
-      id,
-      content,
-      created_at,
-      is_shared,
+      *,
       prayer_supports (
         id,
         message,
         created_at,
+        supporter_id,
         user_profiles:supporter_id ( username ) 
       )
     `)
     .eq('user_id', user.id)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(limit);
 
   if (error) {
-    console.error("Erreur fetch my prayers:", error);
+    logger.error("Error fetching my prayers", error);
     return [];
   }
 
-  // Mapping des résultats
-
-  return data.map(req => ({
+  const rawData = data as unknown as MyPrayerQueryResult[];
+  return rawData.map(req => ({
     id: req.id,
     content: req.content,
-    created_at: req.created_at,
+    created_at: req.created_at || new Date().toISOString(),
     is_shared: req.is_shared || false,
-
     supports: req.prayer_supports.map((s) => ({
         id: s.id,
         message: s.message,
-        created_at: s.created_at,
-        supporter: s.user_profiles // On mappe user_profiles vers supporter
+        created_at: s.created_at || new Date().toISOString(),
+        supporter: s.user_profiles || { username: "Membre" }
     }))
   })) as MyRequestWithSupports[];
 }
 
-// --- 3. CRÉER UNE DEMANDE ---
-export async function createPrayerRequest(content: string, isShared: boolean) {
+export async function createPrayerRequest(content: string, isShared: boolean): Promise<ActionResponse> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { success: false, error: "Non connecté" };
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) return { success: false, error: "Non connecté" };
 
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('addiction_type_id')
-    .eq('user_id', user.id)
-    .single();
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('addiction_type_id')
+      .eq('user_id', user.id)
+      .single();
 
-  if (!profile?.addiction_type_id) return { success: false, error: "Profil incomplet" };
+    if (!profile?.addiction_type_id) return { success: false, error: "Profil incomplet" };
 
-  const { error } = await supabase
-    .from('prayer_requests')
-    .insert({
-      user_id: user.id,
-      addiction_type_id: profile.addiction_type_id,
-      content: content.trim(),
-      is_shared: isShared
-    });
+    const { error } = await supabase
+      .from('prayer_requests')
+      .insert({
+        user_id: user.id,
+        addiction_type_id: profile.addiction_type_id,
+        content: content.trim(),
+        is_shared: isShared
+      });
 
-  if (error) return { success: false, error: error.message };
+    if (error) {
+      logger.error("Error creating prayer request", error, { userId: user.id });
+      return { success: false, error: "Erreur lors de la création." };
+    }
 
-  revalidatePath('/community'); // Rafraichit la bonne page
-  return { success: true };
+    revalidatePath('/community');
+    return { success: true };
+
+  } catch (error) {
+    logger.error("Exception createPrayerRequest", error);
+    return { success: false, error: "Erreur inattendue." };
+  }
 }
 
-// --- 4. ENVOYER UN SOUTIEN ---
-export async function sendPrayerSupport(requestId: string, message: string) {
+// ✅ CORRECTION ICI : Ajout de la vérification du count
+export async function deletePrayerRequest(requestId: string): Promise<ActionResponse> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { success: false, error: "Non connecté" };
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) return { success: false, error: "Non connecté" };
 
-  const { error } = await supabase
-    .from('prayer_supports')
-    .insert({
-      request_id: requestId,
-      supporter_id: user.id,
-      message: message.trim()
-    });
+    // On demande explicitement le 'count' des lignes supprimées
+    const { error, count } = await supabase
+      .from('prayer_requests')
+      .delete({ count: 'exact' }) 
+      .eq('id', requestId)
+      .eq('user_id', user.id);
 
-  if (error) return { success: false, error: error.message };
+    if (error) {
+      logger.error("Error deleting prayer request", error, { requestId });
+      return { success: false, error: "Impossible de supprimer." };
+    }
 
-  revalidatePath('/community'); // Rafraichit la bonne page
-  return { success: true };
+    // Si aucune ligne n'a été affectée (ex: ID incorrect ou mauvais user), on renvoie une erreur
+    if (count === 0) {
+        return { success: false, error: "Élément introuvable ou accès refusé." };
+    }
+
+    revalidatePath('/community');
+    return { success: true };
+  } catch (error) {
+    logger.error("Exception deletePrayerRequest", error);
+    return { success: false, error: "Erreur serveur." };
+  }
+}
+
+export async function sendPrayerSupport(requestId: string, message: string): Promise<ActionResponse> {
+  const supabase = await createClient();
+  try {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) return { success: false, error: "Non connecté" };
+
+    const { data: request } = await supabase.from('prayer_requests').select('user_id').eq('id', requestId).single();
+
+    const { error } = await supabase
+      .from('prayer_supports')
+      .insert({
+        request_id: requestId,
+        supporter_id: user.id,
+        message: message.trim()
+      });
+
+    if (error) {
+      logger.error("Error sending support", error, { userId: user.id, requestId });
+      return { success: false, error: "Erreur lors de l'envoi." };
+    }
+
+    if (request && request.user_id !== user.id) {
+        await supabase.from('notifications').insert({
+            user_id: request.user_id,
+            type: 'support',
+            title: 'Nouveau soutien 🙏',
+            message: 'Quelqu\'un a prié pour vous.',
+            link: '/community'
+        });
+    }
+
+    revalidatePath('/community');
+    return { success: true };
+  } catch (error) {
+    logger.error("Exception sendPrayerSupport", error);
+    return { success: false, error: "Erreur inattendue." };
+  }
 }

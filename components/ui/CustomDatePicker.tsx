@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 
@@ -21,17 +20,19 @@ export default function CustomDatePicker({
   maxDate 
 }: CustomDatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [viewDate, setViewDate] = useState(new Date());
+  // Initialiser à null pour éviter l'erreur d'hydratation
+  const [viewDate, setViewDate] = useState<Date | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Initialisation de la vue sur la date sélectionnée ou aujourd'hui
+  // Hydratation sécurisée : on ne met la date qu'une fois monté
   useEffect(() => {
     if (value) {
       setViewDate(new Date(value));
+    } else {
+      setViewDate(new Date());
     }
   }, [value]);
 
-  // Fermeture au clic extérieur
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -42,6 +43,16 @@ export default function CustomDatePicker({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Affichage safe pendant le chargement
+  if (!viewDate) {
+      return (
+        <div className="w-full space-y-1">
+            <label className="text-sm font-medium text-gray-text ml-1">{label}</label>
+            <div className="w-full bg-white border rounded-xl px-4 py-3 h-12 bg-gray-55 animate-pulse" />
+        </div>
+      );
+  }
+
   const displayDate = value 
     ? new Date(value).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
     : 'Sélectionner une date';
@@ -51,7 +62,6 @@ export default function CustomDatePicker({
   };
 
   const getFirstDayOfMonth = (year: number, month: number) => {
-    // 0 = Dimanche, 1 = Lundi, etc. On veut Lundi = 0 pour le grid
     const day = new Date(year, month, 1).getDay();
     return day === 0 ? 6 : day - 1;
   };
@@ -60,7 +70,6 @@ export default function CustomDatePicker({
     const newDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
     // Ajustement fuseau horaire local pour éviter le décalage
     const localDate = new Date(newDate.getTime() - (newDate.getTimezoneOffset() * 60000));
-    
     onChange(localDate.toISOString().split('T')[0]);
     setIsOpen(false);
   };
@@ -83,17 +92,14 @@ export default function CustomDatePicker({
            d1.getDate() === d2.getDate();
   };
 
-  // Génération de la grille
   const daysInMonth = getDaysInMonth(viewDate.getFullYear(), viewDate.getMonth());
   const firstDay = getFirstDayOfMonth(viewDate.getFullYear(), viewDate.getMonth());
   const days = [];
   
-  // Cellules vides avant le premier jour
   for (let i = 0; i < firstDay; i++) {
     days.push(<div key={`empty-${i}`} className="h-9 w-9" />);
   }
 
-  // Jours du mois
   for (let d = 1; d <= daysInMonth; d++) {
     const dateToCheck = new Date(viewDate.getFullYear(), viewDate.getMonth(), d);
     const disabled = isDateDisabled(d);
@@ -121,7 +127,6 @@ export default function CustomDatePicker({
     <div className="w-full space-y-1 relative" ref={containerRef}>
       <label className="text-sm font-medium text-gray-text ml-1">{label}</label>
       
-      {/* Input Trigger */}
       <div 
         onClick={() => setIsOpen(!isOpen)}
         className={`
@@ -137,11 +142,9 @@ export default function CustomDatePicker({
 
       {error && <p className="text-xs text-error ml-1 animate-in slide-in-from-top-1">{error}</p>}
 
-      {/* Calendar Dropdown */}
       {isOpen && (
         <div className="absolute z-50 bottom-full mb-2 left-0 w-full bg-white border border-gray-100 rounded-2xl shadow-xl p-4 animate-in fade-in zoom-in-95 slide-in-from-bottom-2">
           
-          {/* Header */}
           <div className="flex items-center justify-between mb-4">
             <button 
               type="button"
@@ -162,9 +165,7 @@ export default function CustomDatePicker({
             </button>
           </div>
 
-          {/* Days Header */}
           <div className="grid grid-cols-7 mb-2">
-            {/* ✅ CORRECTION ICI : Ajout de l'index dans la clé pour éviter le doublon "M" */}
             {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((day, index) => (
               <div key={index} className="h-8 flex items-center justify-center text-xs font-medium text-gray-400">
                 {day}
@@ -172,7 +173,6 @@ export default function CustomDatePicker({
             ))}
           </div>
 
-          {/* Days Grid */}
           <div className="grid grid-cols-7 gap-y-1 place-items-center">
             {days}
           </div>
