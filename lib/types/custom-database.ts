@@ -48,13 +48,15 @@ export type CustomDatabase = GeneratedDatabase & {
       user_stats_daily: {
         Row: {
           user_id: string;
-          stat_date: string; // YYYY-MM-DD
+          stat_date: string;
           pledge_count: number;
-          journal_count: number;
           relapse_count: number;
+          monthly_gain_1: number; // Ajouté
+          monthly_gain_2: number; // Ajouté
+          journal_count: number;
           mood_entries_count: number;
         };
-        Insert: never; // Vue matérialisée -> pas d'insert
+        Insert: never;
         Update: never;
         Relationships: [
           {

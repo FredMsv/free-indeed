@@ -148,6 +148,13 @@ export type Database = {
             referencedRelation: "user_profiles"
             referencedColumns: ["user_id"]
           },
+          {
+            foreignKeyName: "group_messages_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_stats_daily"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       joker_usage_log: {
@@ -258,6 +265,13 @@ export type Database = {
             referencedRelation: "user_profiles"
             referencedColumns: ["user_id"]
           },
+          {
+            foreignKeyName: "prayer_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_stats_daily"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       prayer_supports: {
@@ -297,6 +311,13 @@ export type Database = {
             referencedRelation: "user_profiles"
             referencedColumns: ["user_id"]
           },
+          {
+            foreignKeyName: "prayer_supports_supporter_id_fkey"
+            columns: ["supporter_id"]
+            isOneToOne: false
+            referencedRelation: "user_stats_daily"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       push_subscriptions: {
@@ -328,8 +349,10 @@ export type Database = {
           context: string | null
           created_at: string | null
           id: string
+          location: string | null
           mood_before: string | null
           note: string | null
+          premeditation_level: string | null
           previous_streak_days: number
           relapse_date: string
           trigger_type: string | null
@@ -339,8 +362,10 @@ export type Database = {
           context?: string | null
           created_at?: string | null
           id?: string
+          location?: string | null
           mood_before?: string | null
           note?: string | null
+          premeditation_level?: string | null
           previous_streak_days: number
           relapse_date?: string
           trigger_type?: string | null
@@ -350,8 +375,10 @@ export type Database = {
           context?: string | null
           created_at?: string | null
           id?: string
+          location?: string | null
           mood_before?: string | null
           note?: string | null
+          premeditation_level?: string | null
           previous_streak_days?: number
           relapse_date?: string
           trigger_type?: string | null
@@ -780,9 +807,24 @@ export type Database = {
       }
     }
     Views: {
+      user_relapse_analysis: {
+        Row: {
+          day_of_week: number | null
+          hour_of_day: number | null
+          location: string | null
+          mood_before: string | null
+          premeditation_level: string | null
+          trigger_frequency: number | null
+          trigger_type: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
       user_stats_daily: {
         Row: {
           journal_count: number | null
+          monthly_gain_1: number | null
+          monthly_gain_2: number | null
           mood_entries_count: number | null
           pledge_count: number | null
           relapse_count: number | null

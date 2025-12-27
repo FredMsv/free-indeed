@@ -27,6 +27,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
     fetchInitialData();
 
+    // ÉCOUTEUR TEMPS RÉEL UNIVERSEL
     const channel = supabase
       .channel('realtime_notifications')
       .on(
@@ -35,16 +36,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         (payload) => {
           const newNotif = payload.new as Tables<'notifications'>;
           
+          // 1. Incrémenter le badge visuel
           setUnreadCount(prev => prev + 1);
 
+          // 2. Déclencher le Toast pour TOUTE notification [cite: 264]
           toast(newNotif.title, {
             description: newNotif.message,
+            duration: 6000,
             action: newNotif.link ? {
-              label: 'Voir',
+              label: 'Ouvrir',
               onClick: () => window.location.href = newNotif.link as string
             } : undefined
           });
 
+          // 3. Animation spécifique si c'est un badge
           if (newNotif.type === 'challenge') {
             confetti({
               particleCount: 150,

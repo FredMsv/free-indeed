@@ -1,47 +1,11 @@
-import { z } from "zod";
+import * as z from "zod";
 
-// 1. Constantes
-export const TRIGGERS = [
-  "stress",
-  "boredom",
-  "loneliness",
-  "anger",
-  "celebration",
-  "fatigue",
-  "social_pressure",
-  "other",
-] as const;
-
-export const MOODS = [
-  "anxious",
-  "depressed",
-  "angry",
-  "happy",
-  "neutral",
-  "tired",
-] as const;
-
-// 2. Schéma avec validation manuelle (.refine)
 export const relapseSchema = z.object({
-  
-  trigger_type: z
-    .string()
-    .min(1, "Veuillez sélectionner un déclencheur.")
-    // On cast TRIGGERS en tableau de strings simple pour la vérification
-    .refine((val) => (TRIGGERS as readonly string[]).includes(val), {
-      message: "Déclencheur invalide.",
-    }),
-
-  mood_before: z
-    .string()
-    .min(1, "Comment vous sentiez-vous ?")
-    .refine((val) => (MOODS as readonly string[]).includes(val), {
-      message: "Humeur invalide.",
-    }),
-
-  context: z.string()
-    .max(500, "Le contexte ne doit pas dépasser 500 caractères.")
-    .optional(),
+  trigger_type: z.enum(["stress", "ennui", "solitude", "fatigue", "colere", "autre"]),
+  location: z.enum(["maison", "travail", "exterieur", "soiree"]),
+  premeditation_level: z.enum(["impulsif", "reflechi", "lutte_longue"]),
+  mood_before: z.string().optional(),
+  context: z.string().min(5, "Merci d'expliquer brièvement le contexte").max(500),
 });
 
 export type RelapseInput = z.infer<typeof relapseSchema>;
